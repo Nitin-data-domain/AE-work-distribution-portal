@@ -53,29 +53,35 @@ async function sendEmail(to, subject, htmlBody, textBody) {
     }
   }
 
-  // 2. Direct Gmail SMTP
+  // 2. Direct Gmail SMTP with Multi-Port Fallback (Port 587 & 465)
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const port = parseInt(process.env.SMTP_PORT) || 465;
-      const transporter = nodemailer.createTransport({
-        host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: port,
-        secure: port === 465,
-        auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 10000,
-      });
-      await transporter.sendMail({
-        from: `"${companyName}" <${process.env.SMTP_USER}>`,
-        to,
-        subject,
-        text: textBody || '',
-        html: htmlBody,
-      });
-      console.log(`📧 Email sent via SMTP → ${to}`);
-      return { status: 'sent', method: 'smtp' };
-    } catch (err) {
-      console.error(`❌ SMTP failed to send to ${to}: ${err.message}`);
+    const configuredPort = parseInt(process.env.SMTP_PORT) || 587;
+    // Prioritize port 587 to avoid GoDaddy port 465 EACCES firewall block
+    const portsToTry = [587, 465, configuredPort];
+    const uniquePorts = [...new Set(portsToTry)];
+
+    for (const port of uniquePorts) {
+      try {
+        const transporter = nodemailer.createTransport({
+          host: process.env.SMTP_HOST || 'smtp.gmail.com',
+          port: port,
+          secure: port === 465, // true for 465, false for 587
+          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 8000,
+        });
+        await transporter.sendMail({
+          from: `"${companyName}" <${process.env.SMTP_USER}>`,
+          to,
+          subject,
+          text: textBody || '',
+          html: htmlBody,
+        });
+        console.log(`📧 Email sent via SMTP (port ${port}) → ${to}`);
+        return { status: 'sent', method: `smtp-${port}` };
+      } catch (err) {
+        console.error(`❌ SMTP port ${port} failed for ${to}: ${err.message}`);
+      }
     }
   }
 
