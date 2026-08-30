@@ -127,8 +127,8 @@ async function getGrievances(req, res) {
 
     if (status) { where.push(`g.status = $${idx++}`); params.push(status); }
     if (source) { where.push(`g.source = $${idx++}`); params.push(source); }
-    if (month) { where.push(`EXTRACT(MONTH FROM g.created_at) = $${idx++}`); params.push(parseInt(month)); }
-    if (year) { where.push(`EXTRACT(YEAR FROM g.created_at) = $${idx++}`); params.push(parseInt(year)); }
+    if (month) { where.push(`MONTH(g.created_at) = $${idx++}`); params.push(parseInt(month)); }
+    if (year) { where.push(`YEAR(g.created_at) = $${idx++}`); params.push(parseInt(year)); }
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 
@@ -157,10 +157,11 @@ async function getGrievances(req, res) {
     // Count query
     const countParams = params.slice(0, params.length - 2);
     const countResult = await pool.query(
-      `SELECT COUNT(*) FROM grievances g ${whereClause}`,
+      `SELECT COUNT(*) AS total FROM grievances g ${whereClause}`,
       countParams
     );
-    const total = parseInt(countResult.rows[0].count);
+    // MySQL returns count as 'total' (aliased), Postgres as 'count'
+    const total = parseInt(countResult.rows[0].total || countResult.rows[0].count || 0);
 
     res.json({ grievances: result.rows, total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {

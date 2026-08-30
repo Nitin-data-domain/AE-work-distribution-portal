@@ -1,6 +1,7 @@
 // ============================================================
 // College Grievance Portal — Report Controller
 // HOD/Dean: Monthly statistics + Excel export
+// MySQL-compatible queries (no PostgreSQL-specific syntax)
 // ============================================================
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
@@ -9,24 +10,37 @@ const ExcelJS = require('exceljs');
 async function getSummary(req, res) {
   try {
     const { year } = req.query;
-    const yearFilter = year ? `AND EXTRACT(YEAR FROM created_at) = ${parseInt(year)}` : '';
+    let yearFilter = '';
+    const params = [];
+    if (year) {
+      yearFilter = 'WHERE YEAR(created_at) = ?';
+      params.push(parseInt(year));
+    }
 
+    // MySQL-compatible: use SUM(CASE WHEN ...) instead of COUNT(*) FILTER
     const result = await pool.query(`
       SELECT
-        COUNT(*) FILTER (WHERE TRUE)                         AS total,
-        COUNT(*) FILTER (WHERE status = 'Submitted')         AS submitted,
-        COUNT(*) FILTER (WHERE status = 'Assigned')          AS assigned,
-        COUNT(*) FILTER (WHERE status = 'In Progress')       AS in_progress,
-        COUNT(*) FILTER (WHERE status = 'Resolved')          AS resolved,
-        COUNT(*) FILTER (WHERE status = 'Closed')            AS closed,
-        COUNT(*) FILTER (WHERE source = 'Google Form')       AS from_google_form,
-        COUNT(*) FILTER (WHERE source = 'Portal')            AS from_portal,
-        COUNT(*) FILTER (WHERE source = 'Internal')          AS internal_tasks
+        COUNT(*)                                                   AS total,
+        SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
+        SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
+        SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END)   AS in_progress,
+        SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END)      AS resolved,
+        SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed,
+        SUM(CASE WHEN source = 'Google Form' THEN 1 ELSE 0 END)   AS from_google_form,
+        SUM(CASE WHEN source = 'Portal' THEN 1 ELSE 0 END)        AS from_portal,
+        SUM(CASE WHEN source = 'Internal' THEN 1 ELSE 0 END)      AS internal_tasks
       FROM grievances
-      WHERE TRUE ${yearFilter}
-    `);
+      ${yearFilter}
+    `, params);
 
-    res.json({ summary: result.rows[0] });
+    // Normalize values to strings for frontend consistency
+    const row = result.rows[0] || {};
+    const summary = {};
+    for (const key of Object.keys(row)) {
+      summary[key] = String(row[key] || 0);
+    }
+
+    res.json({ summary });
   } catch (err) {
     console.error('Get summary error:', err);
     res.status(500).json({ error: 'Internal server error' });
@@ -38,19 +52,20 @@ async function getMonthlyReport(req, res) {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
 
+    // MySQL-compatible: MONTH(), MONTHNAME(), SUM(CASE WHEN ...)
     const result = await pool.query(`
       SELECT
-        EXTRACT(MONTH FROM created_at)::int                   AS month,
-        TO_CHAR(created_at, 'Month')                          AS month_name,
-        COUNT(*) FILTER (WHERE TRUE)                          AS total,
-        COUNT(*) FILTER (WHERE status = 'Submitted')          AS submitted,
-        COUNT(*) FILTER (WHERE status = 'Assigned')           AS assigned,
-        COUNT(*) FILTER (WHERE status = 'In Progress')        AS in_progress,
-        COUNT(*) FILTER (WHERE status = 'Resolved')           AS resolved,
-        COUNT(*) FILTER (WHERE status = 'Closed')             AS closed
+        MONTH(created_at)                                          AS month,
+        MONTHNAME(created_at)                                      AS month_name,
+        COUNT(*)                                                   AS total,
+        SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
+        SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
+        SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END)   AS in_progress,
+        SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END)      AS resolved,
+        SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
-      WHERE EXTRACT(YEAR FROM created_at) = $1
-      GROUP BY EXTRACT(MONTH FROM created_at), TO_CHAR(created_at, 'Month')
+      WHERE YEAR(created_at) = ?
+      GROUP BY MONTH(created_at), MONTHNAME(created_at)
       ORDER BY month ASC
     `, [year]);
 
@@ -58,8 +73,17 @@ async function getMonthlyReport(req, res) {
     const monthNames = ['January','February','March','April','May','June',
                         'July','August','September','October','November','December'];
     const filled = monthNames.map((name, i) => {
-      const found = result.rows.find(r => r.month === i + 1);
-      return found || {
+      const found = result.rows.find(r => parseInt(r.month) === i + 1);
+      return found ? {
+        month: parseInt(found.month),
+        month_name: found.month_name || name,
+        total: String(found.total || 0),
+        submitted: String(found.submitted || 0),
+        assigned: String(found.assigned || 0),
+        in_progress: String(found.in_progress || 0),
+        resolved: String(found.resolved || 0),
+        closed: String(found.closed || 0),
+      } : {
         month: i + 1,
         month_name: name,
         total: '0', submitted: '0', assigned: '0',
@@ -80,27 +104,27 @@ async function exportExcel(req, res) {
     const year = parseInt(req.query.year) || new Date().getFullYear();
     const collegeName = process.env.COLLEGE_NAME || 'College Grievance Portal';
 
-    // Fetch monthly data
+    // Fetch monthly data (MySQL-compatible)
     const result = await pool.query(`
       SELECT
-        EXTRACT(MONTH FROM created_at)::int AS month,
-        TO_CHAR(created_at, 'Month')        AS month_name,
-        COUNT(*) FILTER (WHERE TRUE)        AS total,
-        COUNT(*) FILTER (WHERE status = 'Submitted')   AS submitted,
-        COUNT(*) FILTER (WHERE status = 'Assigned')    AS assigned,
-        COUNT(*) FILTER (WHERE status = 'In Progress') AS in_progress,
-        COUNT(*) FILTER (WHERE status = 'Resolved')    AS resolved,
-        COUNT(*) FILTER (WHERE status = 'Closed')      AS closed
+        MONTH(created_at)                                          AS month,
+        MONTHNAME(created_at)                                      AS month_name,
+        COUNT(*)                                                   AS total,
+        SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
+        SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
+        SUM(CASE WHEN status = 'In Progress' THEN 1 ELSE 0 END)   AS in_progress,
+        SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END)      AS resolved,
+        SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
-      WHERE EXTRACT(YEAR FROM created_at) = $1
-      GROUP BY EXTRACT(MONTH FROM created_at), TO_CHAR(created_at, 'Month')
+      WHERE YEAR(created_at) = ?
+      GROUP BY MONTH(created_at), MONTHNAME(created_at)
       ORDER BY month ASC
     `, [year]);
 
     const monthNames = ['January','February','March','April','May','June',
                         'July','August','September','October','November','December'];
     const rows = monthNames.map((name, i) => {
-      const found = result.rows.find(r => r.month === i + 1);
+      const found = result.rows.find(r => parseInt(r.month) === i + 1);
       return found || { month: i + 1, month_name: name, total: 0, submitted: 0, assigned: 0, in_progress: 0, resolved: 0, closed: 0 };
     });
 
@@ -161,13 +185,14 @@ async function exportExcel(req, res) {
       const sub = parseInt(row.submitted) || 0;
       const asgn = parseInt(row.assigned) || 0;
       const ip = parseInt(row.in_progress) || 0;
-      const res = parseInt(row.resolved) || 0;
+      const reso = parseInt(row.resolved) || 0;
       const cls = parseInt(row.closed) || 0;
 
       totalSum += t; submittedSum += sub; assignedSum += asgn;
-      inProgressSum += ip; resolvedSum += res; closedSum += cls;
+      inProgressSum += ip; resolvedSum += reso; closedSum += cls;
 
-      const dataRow = sheet.addRow([i + 1, row.month_name.trim(), t, sub, asgn, ip, res, cls]);
+      const monthNameStr = typeof row.month_name === 'string' ? row.month_name.trim() : monthNames[i];
+      const dataRow = sheet.addRow([i + 1, monthNameStr, t, sub, asgn, ip, reso, cls]);
       dataRow.eachCell((cell, colNumber) => {
         cell.alignment = { horizontal: colNumber <= 2 ? 'left' : 'center', vertical: 'middle' };
         cell.border = {
@@ -183,7 +208,7 @@ async function exportExcel(req, res) {
 
       // Color code the resolved column
       const resolvedCell = dataRow.getCell(7);
-      if (res > 0) {
+      if (reso > 0) {
         resolvedCell.font = { bold: true, color: { argb: 'FF059669' } };
       }
       const pendingCell = dataRow.getCell(4);
@@ -222,9 +247,8 @@ async function exportGrievancesDetail(req, res) {
 
     let where = [];
     let params = [];
-    let idx = 1;
-    if (year) { where.push(`EXTRACT(YEAR FROM g.created_at) = $${idx++}`); params.push(parseInt(year)); }
-    if (status) { where.push(`g.status = $${idx++}`); params.push(status); }
+    if (year) { where.push('YEAR(g.created_at) = ?'); params.push(parseInt(year)); }
+    if (status) { where.push('g.status = ?'); params.push(status); }
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const result = await pool.query(`

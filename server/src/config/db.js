@@ -40,6 +40,21 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
     console.log('🗄️ MySQL Connection Pool initialized');
   }
 
+  /**
+   * Normalize MySQL rows: convert TINYINT is_active (0/1) to boolean true/false
+   * and ensure COUNT/SUM results are consistent
+   */
+  function normalizeRows(rows) {
+    if (!Array.isArray(rows)) return rows;
+    return rows.map(row => {
+      const normalized = { ...row };
+      if ('is_active' in normalized) {
+        normalized.is_active = !!normalized.is_active;
+      }
+      return normalized;
+    });
+  }
+
   module.exports = {
     query: async (sqlText, params = []) => {
       // 1. Convert PostgreSQL $1, $2 positional placeholders to MySQL ? syntax
@@ -56,10 +71,31 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
         formattedSql = formattedSql.replace(/RETURNING\s+[\s\S]+$/i, '').trim();
       }
 
-      // 3. Handle Postgres 'NOT is_active' boolean flip syntax for MySQL
-      formattedSql = formattedSql.replace(/NOT\s+is_active/gi, 'NOT(is_active)');
+      // 3. Handle Postgres 'NOT is_active' → MySQL '1 - is_active' for TINYINT toggle
+      formattedSql = formattedSql.replace(
+        /SET\s+is_active\s*=\s*NOT\s+is_active/gi,
+        'SET is_active = 1 - is_active'
+      );
 
-      const [results] = await mysqlPool.execute(formattedSql, params);
+      // 4. Handle PostgreSQL EXTRACT → MySQL equivalents
+      formattedSql = formattedSql.replace(/EXTRACT\s*\(\s*MONTH\s+FROM\s+/gi, 'MONTH(');
+      formattedSql = formattedSql.replace(/EXTRACT\s*\(\s*YEAR\s+FROM\s+/gi, 'YEAR(');
+      // Remove ::int type casts (Postgres-specific)
+      formattedSql = formattedSql.replace(/::int/gi, '');
+
+      // 5. Cast LIMIT and OFFSET params to integers (mysql2 execute doesn't support ? for LIMIT/OFFSET)
+      const limitMatch = formattedSql.match(/LIMIT\s+\?\s+OFFSET\s+\?/i);
+      if (limitMatch && params.length >= 2) {
+        const offsetVal = parseInt(params.pop());
+        const limitVal = parseInt(params.pop());
+        formattedSql = formattedSql.replace(
+          /LIMIT\s+\?\s+OFFSET\s+\?/i,
+          `LIMIT ${limitVal} OFFSET ${offsetVal}`
+        );
+      }
+
+      // Use query() instead of execute() for broader compatibility
+      const [results] = await mysqlPool.query(formattedSql, params);
       
       let rows = Array.isArray(results) ? results : [];
 
@@ -70,7 +106,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
           if (tableMatch) {
             const tableName = tableMatch[1].toLowerCase();
             const pkField = tableName === 'users' ? 'user_id' : (tableName === 'grievances' ? 'grievance_id' : 'history_id');
-            const [inserted] = await mysqlPool.execute(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [results.insertId]);
+            const [inserted] = await mysqlPool.query(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [results.insertId]);
             rows = inserted;
           }
         } 
@@ -82,12 +118,15 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
             const pkField = tableName === 'users' ? 'user_id' : (tableName === 'grievances' ? 'grievance_id' : 'history_id');
             const lastParam = params[params.length - 1];
             if (lastParam !== undefined) {
-              const [updated] = await mysqlPool.execute(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [lastParam]);
+              const [updated] = await mysqlPool.query(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [lastParam]);
               rows = updated;
             }
           }
         }
       }
+
+      // Normalize is_active and count fields
+      rows = normalizeRows(rows);
 
       return { rows, insertId: results ? results.insertId : null, affectedRows: results ? results.affectedRows : 0 };
     }
