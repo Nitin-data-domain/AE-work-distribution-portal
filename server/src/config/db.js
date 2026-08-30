@@ -1,9 +1,9 @@
 // ============================================================
-// College Grievance Portal — Database Connection Pool (MySQL & Postgres)
+// College Grievance Portal — Dual Database Connection Pool (MySQL & Postgres)
+// Handles query conversion and RETURNING clauses for MySQL compatibility
 // ============================================================
 require('dotenv').config();
 
-// Check if using PostgreSQL (e.g., Neon or standard PG)
 if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres')) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const { Pool: NeonPool, neonConfig } = require('@neondatabase/serverless');
@@ -42,7 +42,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
 
   module.exports = {
     query: async (sqlText, params = []) => {
-      // Convert PostgreSQL $1, $2 positional placeholders to MySQL ? syntax
+      // 1. Convert PostgreSQL $1, $2 positional placeholders to MySQL ? syntax
       let formattedSql = sqlText;
       let paramIndex = 1;
       while (formattedSql.includes(`$${paramIndex}`)) {
@@ -50,11 +50,46 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
         paramIndex++;
       }
 
+      // 2. Handle RETURNING clause for MySQL compatibility
+      const returningMatch = formattedSql.match(/RETURNING\s+([\s\S]+)$/i);
+      if (returningMatch) {
+        formattedSql = formattedSql.replace(/RETURNING\s+[\s\S]+$/i, '').trim();
+      }
+
+      // 3. Handle Postgres 'NOT is_active' boolean flip syntax for MySQL
+      formattedSql = formattedSql.replace(/NOT\s+is_active/gi, 'NOT(is_active)');
+
       const [results] = await mysqlPool.execute(formattedSql, params);
-      const rows = Array.isArray(results) ? results : (results ? [results] : []);
-      return { rows, insertId: results.insertId, affectedRows: results.affectedRows };
+      
+      let rows = Array.isArray(results) ? results : [];
+
+      if (!Array.isArray(results) && returningMatch) {
+        // If it was an INSERT with RETURNING
+        if (results.insertId) {
+          const tableMatch = sqlText.match(/INSERT\s+INTO\s+([^\s(]+)/i);
+          if (tableMatch) {
+            const tableName = tableMatch[1].toLowerCase();
+            const pkField = tableName === 'users' ? 'user_id' : (tableName === 'grievances' ? 'grievance_id' : 'history_id');
+            const [inserted] = await mysqlPool.execute(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [results.insertId]);
+            rows = inserted;
+          }
+        } 
+        // If it was an UPDATE with RETURNING
+        else if (results.affectedRows > 0) {
+          const tableMatch = sqlText.match(/UPDATE\s+([^\s]+)/i);
+          if (tableMatch) {
+            const tableName = tableMatch[1].toLowerCase();
+            const pkField = tableName === 'users' ? 'user_id' : (tableName === 'grievances' ? 'grievance_id' : 'history_id');
+            const lastParam = params[params.length - 1];
+            if (lastParam !== undefined) {
+              const [updated] = await mysqlPool.execute(`SELECT * FROM ${tableName} WHERE ${pkField} = ?`, [lastParam]);
+              rows = updated;
+            }
+          }
+        }
+      }
+
+      return { rows, insertId: results ? results.insertId : null, affectedRows: results ? results.affectedRows : 0 };
     }
   };
 }
-
-
