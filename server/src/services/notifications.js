@@ -41,16 +41,17 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
       const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
-      
-      // Send via GET with URL params (safest for Google Apps Script 302 redirects)
-      const url = new URL(scriptUrlStr);
-      url.searchParams.append('to', to);
-      url.searchParams.append('subject', subject);
-      url.searchParams.append('html', htmlBody);
-      url.searchParams.append('text', textBody || htmlBody.replace(/<[^>]+>/g, ''));
+      const payload = JSON.stringify({
+        to,
+        subject,
+        html: htmlBody,
+        text: textBody || htmlBody.replace(/<[^>]+>/g, ''),
+      });
 
-      const response = await fetch(url.toString(), {
-        method: 'GET',
+      const response = await fetch(scriptUrlStr, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain' },
+        body: payload,
         redirect: 'follow',
       });
 

@@ -37,24 +37,21 @@ function doGet(e) {
 
 function doPost(e) {
   try {
-    var to, subject, htmlBody, textBody;
-    
+    var data = {};
     if (e && e.postData && e.postData.contents) {
       try {
-        var data = JSON.parse(e.postData.contents);
-        to = data.to;
-        subject = data.subject;
-        htmlBody = data.html || data.body || '';
-        textBody = data.text || '';
-      } catch(pErr) {}
+        data = JSON.parse(e.postData.contents);
+      } catch (jsonErr) {
+        data = e.parameter || {};
+      }
+    } else if (e && e.parameter) {
+      data = e.parameter;
     }
     
-    if (!to && e && e.parameter) {
-      to = e.parameter.to;
-      subject = e.parameter.subject;
-      htmlBody = e.parameter.html || e.parameter.body || '';
-      textBody = e.parameter.text || '';
-    }
+    var to = data.to;
+    var subject = data.subject;
+    var htmlBody = data.html || data.body || '';
+    var textBody = data.text || '';
     
     var result = sendMailHandler(to, subject, htmlBody, textBody);
     return ContentService.createTextOutput(JSON.stringify(result)).setMimeType(ContentService.MimeType.JSON);

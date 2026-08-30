@@ -108,7 +108,7 @@ async function handleGoogleFormWebhook(req, res) {
 
         // 2. Notify Deans & HODs
         const admins = await pool.query(
-          `SELECT user_id, name, email FROM users WHERE role IN ('Dean', 'HOD') AND is_active = true`
+          `SELECT user_id, name, email FROM users WHERE role IN ('Dean', 'HOD') AND (is_active = 1 OR is_active = true)`
         );
 
         for (const admin of admins.rows) {
