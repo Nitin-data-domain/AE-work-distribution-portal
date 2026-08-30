@@ -53,37 +53,37 @@ async function sendEmail(to, subject, htmlBody, textBody) {
     }
   }
 
-  // 2. Direct Gmail / SMTP Delivery
+  // 2. Direct Gmail / SMTP Delivery (Using Port 587 STARTTLS for cloud hosting compatibility)
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     try {
-      const transportConfig = (process.env.SMTP_HOST && !process.env.SMTP_HOST.includes('gmail'))
-        ? {
-            host: process.env.SMTP_HOST,
-            port: parseInt(process.env.SMTP_PORT) || 587,
-            secure: parseInt(process.env.SMTP_PORT) === 465,
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-            tls: { rejectUnauthorized: false },
-            connectionTimeout: 10000,
-          }
-        : {
-            service: 'gmail',
-            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-            tls: { rejectUnauthorized: false },
-            connectionTimeout: 10000,
-          };
+      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+      const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
+      const cleanPass = process.env.SMTP_PASS.replace(/\s+/g, '');
 
-      const transporter = nodemailer.createTransport(transportConfig);
-      await transporter.sendMail({
-        from: `"${companyName}" <${process.env.SMTP_USER}>`,
+      const transporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: smtpPort === 465, // false for 587
+        requireTLS: smtpPort === 587,
+        auth: {
+          user: process.env.SMTP_USER.trim(),
+          pass: cleanPass,
+        },
+        tls: { rejectUnauthorized: false },
+        connectionTimeout: 15000,
+      });
+
+      const info = await transporter.sendMail({
+        from: `"${companyName}" <${process.env.SMTP_USER.trim()}>`,
         to,
         subject,
         text: textBody || '',
         html: htmlBody,
       });
-      console.log(`📧 Email sent via Gmail/SMTP → ${to}`);
-      return { status: 'sent', method: 'smtp' };
+      console.log(`📧 Email successfully sent to ${to} (MessageID: ${info.messageId})`);
+      return { status: 'sent', method: 'smtp', messageId: info.messageId };
     } catch (err) {
-      console.error(`❌ Gmail/SMTP failed to send to ${to}: ${err.message}`);
+      console.error(`❌ SMTP delivery failed to ${to}: ${err.message}`);
     }
   }
 

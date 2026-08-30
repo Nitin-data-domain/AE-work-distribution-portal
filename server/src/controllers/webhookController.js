@@ -26,9 +26,11 @@ async function handleGoogleFormWebhook(req, res) {
     } = req.body;
 
     // ── Security validation
+    const incomingSecret = secret_key || req.query?.secret_key || req.headers['x-webhook-secret'];
     const expectedSecret = (process.env.WEBHOOK_SECRET || 'COLLEGE_GRIEVANCE_SECRET_2026').trim();
-    const providedSecret = (secret_key || '').trim();
-    if (providedSecret !== expectedSecret && providedSecret !== 'COLLEGE_GRIEVANCE_SECRET_2026') {
+    const providedSecret = (incomingSecret || '').trim();
+
+    if (!providedSecret || (providedSecret !== expectedSecret && providedSecret !== 'COLLEGE_GRIEVANCE_SECRET_2026')) {
       return res.status(401).json({ error: 'Unauthorized: Invalid webhook secret.' });
     }
 
