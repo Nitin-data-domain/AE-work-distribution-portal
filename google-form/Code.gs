@@ -4,7 +4,7 @@
  * ============================================================
  */
 
-const API_ENDPOINT = "https://17r3d9w7ay.preview.c36.airoapp.ai/api/webhooks/google-form";
+const API_ENDPOINT = "https://17r3d9w7ay.c36.airoapp.ai/api/webhooks/google-form";
 const WEBHOOK_SECRET = "COLLEGE_GRIEVANCE_SECRET_2026";
 
 function onFormSubmit(e) {
