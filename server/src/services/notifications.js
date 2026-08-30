@@ -37,23 +37,42 @@ async function sendEmail(to, subject, htmlBody, textBody) {
 
   const companyName = process.env.COLLEGE_NAME || 'Aharada Education';
 
-  // 1. Google Apps Script Proxy (recommended for shared hosting)
+  // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
-      const url = new URL(process.env.GOOGLE_SCRIPT_URL);
-      url.searchParams.append('to', to);
-      url.searchParams.append('subject', subject);
-      url.searchParams.append('body', textBody || htmlBody.replace(/<[^>]+>/g, ''));
-      const response = await fetch(url.toString(), { method: 'GET' });
-      if (!response.ok) throw new Error(`Google Script HTTP ${response.status}`);
-      console.log(`📧 Email sent via Google Proxy → ${to}`);
-      return { status: 'sent', method: 'google-proxy' };
+      const scriptUrl = process.env.GOOGLE_SCRIPT_URL.trim();
+      const payload = JSON.stringify({
+        to,
+        subject,
+        html: htmlBody,
+        text: textBody || htmlBody.replace(/<[^>]+>/g, ''),
+      });
+
+      // Google Apps Script redirects POST to a different URL (302)
+      // Node fetch follows redirects automatically
+      const response = await fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: payload,
+        redirect: 'follow',
+      });
+
+      const responseText = await response.text();
+      let result;
+      try { result = JSON.parse(responseText); } catch { result = { success: response.ok }; }
+
+      if (result.success || response.ok) {
+        console.log(`📧 Email sent via Google Apps Script Proxy → ${to}`);
+        return { status: 'sent', method: 'google-proxy' };
+      } else {
+        throw new Error(result.error || `HTTP ${response.status}`);
+      }
     } catch (err) {
       console.error(`❌ Google Proxy failed: ${err.message} — falling through to SMTP`);
     }
   }
 
-  // 2. Direct Gmail / SMTP Delivery (Using Port 587 STARTTLS for cloud hosting compatibility)
+  // 2. Direct Gmail / SMTP Delivery (fallback — may not work on GoDaddy due to port blocking)
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     try {
       const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
@@ -63,7 +82,7 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       const transporter = nodemailer.createTransport({
         host: smtpHost,
         port: smtpPort,
-        secure: smtpPort === 465, // false for 587
+        secure: smtpPort === 465,
         requireTLS: smtpPort === 587,
         auth: {
           user: process.env.SMTP_USER.trim(),
