@@ -40,20 +40,17 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
-      const scriptUrl = process.env.GOOGLE_SCRIPT_URL.trim();
-      const payload = JSON.stringify({
-        to,
-        subject,
-        html: htmlBody,
-        text: textBody || htmlBody.replace(/<[^>]+>/g, ''),
-      });
+      const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
+      
+      // Send via GET with URL params (safest for Google Apps Script 302 redirects)
+      const url = new URL(scriptUrlStr);
+      url.searchParams.append('to', to);
+      url.searchParams.append('subject', subject);
+      url.searchParams.append('html', htmlBody);
+      url.searchParams.append('text', textBody || htmlBody.replace(/<[^>]+>/g, ''));
 
-      // Google Apps Script redirects POST to a different URL (302)
-      // Node fetch follows redirects automatically
-      const response = await fetch(scriptUrl, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: payload,
+      const response = await fetch(url.toString(), {
+        method: 'GET',
         redirect: 'follow',
       });
 

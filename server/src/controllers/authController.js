@@ -138,8 +138,8 @@ async function forgotPassword(req, res) {
     if (result.rows.length === 0) return res.status(404).json({ error: 'No account found with this email.' });
 
     const otp = generateOTP();
-    const expiresAt = new Date(Date.now() + 10 * 60 * 1000);
-    await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE email = $3', [otp, expiresAt, email]);
+    const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
+    await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE LOWER(email) = LOWER($3)', [otp, expiresAt, email]);
 
     await sendEmail(
       email,
