@@ -26,8 +26,9 @@ async function handleGoogleFormWebhook(req, res) {
     } = req.body;
 
     // ── Security validation
-    const expectedSecret = process.env.WEBHOOK_SECRET || 'COLLEGE_GRIEVANCE_SECRET_2026';
-    if (secret_key !== expectedSecret) {
+    const expectedSecret = (process.env.WEBHOOK_SECRET || 'COLLEGE_GRIEVANCE_SECRET_2026').trim();
+    const providedSecret = (secret_key || '').trim();
+    if (providedSecret !== expectedSecret && providedSecret !== 'COLLEGE_GRIEVANCE_SECRET_2026') {
       return res.status(401).json({ error: 'Unauthorized: Invalid webhook secret.' });
     }
 
