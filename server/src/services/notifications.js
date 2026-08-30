@@ -53,35 +53,37 @@ async function sendEmail(to, subject, htmlBody, textBody) {
     }
   }
 
-  // 2. Direct Gmail SMTP with Multi-Port Fallback (Port 587 & 465)
+  // 2. Direct Gmail / SMTP Delivery
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    const configuredPort = parseInt(process.env.SMTP_PORT) || 587;
-    // Prioritize port 587 to avoid GoDaddy port 465 EACCES firewall block
-    const portsToTry = [587, 465, configuredPort];
-    const uniquePorts = [...new Set(portsToTry)];
+    try {
+      const transportConfig = (process.env.SMTP_HOST && !process.env.SMTP_HOST.includes('gmail'))
+        ? {
+            host: process.env.SMTP_HOST,
+            port: parseInt(process.env.SMTP_PORT) || 587,
+            secure: parseInt(process.env.SMTP_PORT) === 465,
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 10000,
+          }
+        : {
+            service: 'gmail',
+            auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
+            tls: { rejectUnauthorized: false },
+            connectionTimeout: 10000,
+          };
 
-    for (const port of uniquePorts) {
-      try {
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port: port,
-          secure: port === 465, // true for 465, false for 587
-          auth: { user: process.env.SMTP_USER, pass: process.env.SMTP_PASS },
-          tls: { rejectUnauthorized: false },
-          connectionTimeout: 8000,
-        });
-        await transporter.sendMail({
-          from: `"${companyName}" <${process.env.SMTP_USER}>`,
-          to,
-          subject,
-          text: textBody || '',
-          html: htmlBody,
-        });
-        console.log(`📧 Email sent via SMTP (port ${port}) → ${to}`);
-        return { status: 'sent', method: `smtp-${port}` };
-      } catch (err) {
-        console.error(`❌ SMTP port ${port} failed for ${to}: ${err.message}`);
-      }
+      const transporter = nodemailer.createTransport(transportConfig);
+      await transporter.sendMail({
+        from: `"${companyName}" <${process.env.SMTP_USER}>`,
+        to,
+        subject,
+        text: textBody || '',
+        html: htmlBody,
+      });
+      console.log(`📧 Email sent via Gmail/SMTP → ${to}`);
+      return { status: 'sent', method: 'smtp' };
+    } catch (err) {
+      console.error(`❌ Gmail/SMTP failed to send to ${to}: ${err.message}`);
     }
   }
 
