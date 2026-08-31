@@ -2,7 +2,9 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider, useAuth } from './context/AuthContext';
 import Login from './components/Login';
+import Register from './components/Register';
 import Layout from './components/Layout';
+import StudentDashboard from './components/StudentDashboard';
 import HODDashboard from './components/HODDashboard';
 import FacultyDashboard from './components/FacultyDashboard';
 import DeanDashboard from './components/DeanDashboard';
@@ -22,6 +24,7 @@ function DashboardRouter() {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
   switch (user.role) {
+    case 'Student':  return <StudentDashboard />;
     case 'HOD':      return <HODDashboard />;
     case 'Faculty':  return <FacultyDashboard />;
     case 'Dean':     return <DeanDashboard />;
@@ -41,6 +44,7 @@ export default function App() {
         }} />
         <Routes>
           <Route path="/login"    element={<Login />} />
+          <Route path="/register" element={<Register />} />
           <Route path="/dashboard" element={
             <ProtectedRoute>
               <Layout><DashboardRouter /></Layout>

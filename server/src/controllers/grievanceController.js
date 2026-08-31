@@ -127,8 +127,8 @@ async function getGrievances(req, res) {
 
     if (status) { where.push(`g.status = $${idx++}`); params.push(status); }
     if (source) { where.push(`g.source = $${idx++}`); params.push(source); }
-    if (month) { where.push(`MONTH(g.created_at) = $${idx++}`); params.push(parseInt(month)); }
-    if (year) { where.push(`YEAR(g.created_at) = $${idx++}`); params.push(parseInt(year)); }
+    if (month) { where.push(`EXTRACT(MONTH FROM g.created_at)::int = $${idx++}`); params.push(parseInt(month)); }
+    if (year) { where.push(`EXTRACT(YEAR FROM g.created_at)::int = $${idx++}`); params.push(parseInt(year)); }
 
     const whereClause = where.length > 0 ? `WHERE ${where.join(' AND ')}` : '';
 

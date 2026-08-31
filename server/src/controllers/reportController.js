@@ -1,7 +1,7 @@
 // ============================================================
 // College Grievance Portal — Report Controller
 // HOD/Dean: Monthly statistics + Excel export
-// MySQL-compatible queries (no PostgreSQL-specific syntax)
+// PostgreSQL-compatible queries (EXTRACT, TO_CHAR, $1 params)
 // ============================================================
 const pool = require('../config/db');
 const ExcelJS = require('exceljs');
@@ -13,11 +13,11 @@ async function getSummary(req, res) {
     let yearFilter = '';
     const params = [];
     if (year) {
-      yearFilter = 'WHERE YEAR(created_at) = ?';
+      yearFilter = 'WHERE EXTRACT(YEAR FROM created_at)::int = $1';
       params.push(parseInt(year));
     }
 
-    // MySQL-compatible: use SUM(CASE WHEN ...) instead of COUNT(*) FILTER
+    // SUM(CASE WHEN ...) works on both PostgreSQL and MySQL
     const result = await pool.query(`
       SELECT
         COUNT(*)                                                   AS total,
@@ -52,11 +52,11 @@ async function getMonthlyReport(req, res) {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
 
-    // MySQL-compatible: MONTH(), MONTHNAME(), SUM(CASE WHEN ...)
+    // PostgreSQL: EXTRACT + TO_CHAR for month name
     const result = await pool.query(`
       SELECT
-        MONTH(created_at)                                          AS month,
-        MONTHNAME(created_at)                                      AS month_name,
+        EXTRACT(MONTH FROM created_at)::int                        AS month,
+        TO_CHAR(created_at, 'Month')                               AS month_name,
         COUNT(*)                                                   AS total,
         SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
         SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
@@ -64,8 +64,8 @@ async function getMonthlyReport(req, res) {
         SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END)      AS resolved,
         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
-      WHERE YEAR(created_at) = ?
-      GROUP BY MONTH(created_at), MONTHNAME(created_at)
+      WHERE EXTRACT(YEAR FROM created_at)::int = $1
+      GROUP BY EXTRACT(MONTH FROM created_at)::int, TO_CHAR(created_at, 'Month')
       ORDER BY month ASC
     `, [year]);
 
@@ -76,7 +76,7 @@ async function getMonthlyReport(req, res) {
       const found = result.rows.find(r => parseInt(r.month) === i + 1);
       return found ? {
         month: parseInt(found.month),
-        month_name: found.month_name || name,
+        month_name: (found.month_name || name).trim(),
         total: String(found.total || 0),
         submitted: String(found.submitted || 0),
         assigned: String(found.assigned || 0),
@@ -104,11 +104,11 @@ async function exportExcel(req, res) {
     const year = parseInt(req.query.year) || new Date().getFullYear();
     const collegeName = process.env.COLLEGE_NAME || 'College Grievance Portal';
 
-    // Fetch monthly data (MySQL-compatible)
+    // Fetch monthly data (PostgreSQL-compatible)
     const result = await pool.query(`
       SELECT
-        MONTH(created_at)                                          AS month,
-        MONTHNAME(created_at)                                      AS month_name,
+        EXTRACT(MONTH FROM created_at)::int                        AS month,
+        TO_CHAR(created_at, 'Month')                               AS month_name,
         COUNT(*)                                                   AS total,
         SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
         SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
@@ -116,8 +116,8 @@ async function exportExcel(req, res) {
         SUM(CASE WHEN status = 'Resolved' THEN 1 ELSE 0 END)      AS resolved,
         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
-      WHERE YEAR(created_at) = ?
-      GROUP BY MONTH(created_at), MONTHNAME(created_at)
+      WHERE EXTRACT(YEAR FROM created_at)::int = $1
+      GROUP BY EXTRACT(MONTH FROM created_at)::int, TO_CHAR(created_at, 'Month')
       ORDER BY month ASC
     `, [year]);
 
@@ -247,8 +247,9 @@ async function exportGrievancesDetail(req, res) {
 
     let where = [];
     let params = [];
-    if (year) { where.push('YEAR(g.created_at) = ?'); params.push(parseInt(year)); }
-    if (status) { where.push('g.status = ?'); params.push(status); }
+    let idx = 1;
+    if (year) { where.push(`EXTRACT(YEAR FROM g.created_at)::int = $${idx++}`); params.push(parseInt(year)); }
+    if (status) { where.push(`g.status = $${idx++}`); params.push(status); }
     const whereClause = where.length ? `WHERE ${where.join(' AND ')}` : '';
 
     const result = await pool.query(`
