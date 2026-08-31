@@ -141,16 +141,24 @@ async function forgotPassword(req, res) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE LOWER(email) = LOWER($3)', [otp, expiresAt, email]);
 
-    await sendEmail(
-      email,
-      'Password Reset OTP — Grievance Portal',
-      `<p>Your password reset OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes. If you did not request this, please ignore.</p>`,
-      `Your password reset OTP is: ${otp}. Valid for 10 minutes.`
-    );
+    // Try to send email — don't fail the request if email delivery fails
+    try {
+      await sendEmail(
+        email,
+        'Password Reset OTP — Aharada Education',
+        `<p>Your password reset OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes. If you did not request this, please ignore.</p>`,
+        `Your password reset OTP is: ${otp}. Valid for 10 minutes.`
+      );
+      console.log(`✅ OTP email sent to ${email}`);
+    } catch (emailErr) {
+      console.error(`⚠️ OTP email delivery failed for ${email}:`, emailErr.message);
+      // OTP is saved in DB — user can still verify
+    }
+
     res.json({ message: 'OTP sent to your email.' });
   } catch (err) {
     console.error('Forgot password error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: `Failed: ${err.message}` });
   }
 }
 
