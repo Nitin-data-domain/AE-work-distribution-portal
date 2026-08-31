@@ -5,7 +5,6 @@ import { useAuth } from '../context/AuthContext';
 import StatusBadge from './StatusBadge';
 import { formatFileUrl } from '../utils/fileUrl';
 import { FiPlus, FiPaperclip, FiX, FiClock, FiUser } from 'react-icons/fi';
-import { MdOutlineGrievance } from 'react-icons/md';
 
 export default function StudentDashboard() {
   const { user } = useAuth();

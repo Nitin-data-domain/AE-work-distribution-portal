@@ -22,15 +22,6 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await api.post('/auth/login', form);
-      const role = res.data.user.role;
-      // Only Dean, HOD and Faculty can access the staff portal dashboard
-      if (!['Dean', 'HOD', 'Faculty'].includes(role)) {
-        toast.error(
-          'This portal is for Staff only (Dean / HOD / Faculty). ' +
-          'Students receive email updates directly for each grievance stage.'
-        );
-        return;
-      }
       login(res.data.token, res.data.user);
       toast.success(`Welcome back, ${res.data.user.name}! 🎉`);
       navigate('/dashboard');
@@ -82,7 +73,7 @@ export default function Login() {
       <div className="auth-card">
         <div className="auth-logo">
           <h1><MdSchool style={{ verticalAlign: 'middle', marginRight: 6 }} />{collegeName}</h1>
-          <p>{forgot ? 'Reset Password' : 'Staff Portal Sign In (Dean / HOD / Faculty)'}</p>
+          <p>{forgot ? 'Reset Password' : 'Grievance & Task Management Portal'}</p>
         </div>
 
         {!forgot ? (
