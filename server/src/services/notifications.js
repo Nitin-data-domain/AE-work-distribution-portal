@@ -3,6 +3,48 @@
 // Supports: Google Apps Script Proxy | Gmail SMTP | Mock Mode
 // ============================================================
 const nodemailer = require('nodemailer');
+const https = require('https');
+const http = require('http');
+
+// ─── Google Apps Script GET with manual redirect following ───
+// Google Apps Script Web Apps redirect to googleusercontent.com
+// which ONLY accepts GET requests (POST returns 405). 
+// We pass email data as URL query parameters.
+function httpsGet(url, maxRedirects = 5) {
+  return new Promise((resolve, reject) => {
+    if (maxRedirects <= 0) return reject(new Error('Too many redirects'));
+
+    const urlObj = new URL(url);
+    const httpModule = urlObj.protocol === 'https:' ? https : http;
+
+    const options = {
+      hostname: urlObj.hostname,
+      port: urlObj.protocol === 'https:' ? 443 : 80,
+      path: urlObj.pathname + urlObj.search,
+      method: 'GET',
+      headers: { 'User-Agent': 'AharadaPortal/1.0' },
+    };
+
+    const req = httpModule.request(options, (res) => {
+      if ([301, 302, 307, 308].includes(res.statusCode)) {
+        const location = res.headers.location;
+        if (!location) return reject(new Error('Redirect with no Location header'));
+        res.resume();
+        return httpsGet(location, maxRedirects - 1).then(resolve).catch(reject);
+      }
+
+      let body = '';
+      res.on('data', (chunk) => { body += chunk; });
+      res.on('end', () => {
+        resolve({ statusCode: res.statusCode, body });
+      });
+    });
+
+    req.on('error', reject);
+    req.setTimeout(20000, () => { req.destroy(new Error('Request timeout')); });
+    req.end();
+  });
+}
 
 // ─── Name Formatter Helper ──────────────────────────────────
 /**
@@ -38,32 +80,30 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   const companyName = process.env.COLLEGE_NAME || 'Aharada Education';
 
   // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
+  //    Uses httpsGet() with query params + manual redirect following.
+  //    Google's redirected URL only accepts GET (POST returns 405).
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
       const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
-      const payload = JSON.stringify({
-        to,
-        subject,
-        html: htmlBody,
-        text: textBody || htmlBody.replace(/<[^>]+>/g, ''),
-      });
+      const plainText = textBody || htmlBody.replace(/<[^>]+>/g, '');
 
-      const response = await fetch(scriptUrlStr, {
-        method: 'POST',
-        headers: { 'Content-Type': 'text/plain' },
-        body: payload,
-        redirect: 'follow',
-      });
+      // Build URL with query parameters
+      const url = new URL(scriptUrlStr);
+      url.searchParams.set('to', to);
+      url.searchParams.set('subject', subject);
+      // Send plain text body (HTML exceeds URL length limits)
+      url.searchParams.set('body', plainText.substring(0, 1500));
 
-      const responseText = await response.text();
+      const response = await httpsGet(url.toString());
+
       let result;
-      try { result = JSON.parse(responseText); } catch { result = { success: response.ok }; }
+      try { result = JSON.parse(response.body); } catch { result = { success: response.statusCode === 200 }; }
 
-      if (result.success || response.ok) {
+      if (result.success || response.statusCode === 200) {
         console.log(`📧 Email sent via Google Apps Script Proxy → ${to}`);
         return { status: 'sent', method: 'google-proxy' };
       } else {
-        throw new Error(result.error || `HTTP ${response.status}`);
+        throw new Error(result.error || `HTTP ${response.statusCode}: ${response.body.substring(0, 200)}`);
       }
     } catch (err) {
       console.error(`❌ Google Proxy failed: ${err.message} — falling through to SMTP`);
