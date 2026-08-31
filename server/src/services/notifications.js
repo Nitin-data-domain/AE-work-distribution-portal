@@ -94,13 +94,14 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       // Send plain text body (HTML exceeds URL length limits)
       url.searchParams.set('body', plainText.substring(0, 1500));
 
+      console.log(`📤 Sending via Google Apps Script Proxy → ${to}`);
       const response = await httpsGet(url.toString());
 
       let result;
       try { result = JSON.parse(response.body); } catch { result = { success: response.statusCode === 200 }; }
 
       if (result.success || response.statusCode === 200) {
-        console.log(`📧 Email sent via Google Apps Script Proxy → ${to}`);
+        console.log(`✅ Email sent via Google Apps Script Proxy → ${to}`);
         return { status: 'sent', method: 'google-proxy' };
       } else {
         throw new Error(result.error || `HTTP ${response.statusCode}: ${response.body.substring(0, 200)}`);
@@ -110,37 +111,55 @@ async function sendEmail(to, subject, htmlBody, textBody) {
     }
   }
 
-  // 2. Direct Gmail / SMTP Delivery (fallback — may not work on GoDaddy due to port blocking)
+  // 2. Direct Gmail / SMTP Delivery
+  //    Tries port 465 (SSL) then 587 (STARTTLS) automatically.
+  //    GoDaddy shared hosting blocks 465 but allows 587 in some plans.
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
-    try {
-      const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
-      const smtpPort = parseInt(process.env.SMTP_PORT) || 587;
-      const cleanPass = process.env.SMTP_PASS.replace(/\s+/g, '');
+    const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
+    const smtpUser = process.env.SMTP_USER.trim();
+    const cleanPass = process.env.SMTP_PASS.replace(/\s+/g, '');
+    const configuredPort = process.env.SMTP_PORT ? parseInt(process.env.SMTP_PORT) : null;
 
-      const transporter = nodemailer.createTransport({
-        host: smtpHost,
-        port: smtpPort,
-        secure: smtpPort === 465,
-        requireTLS: smtpPort === 587,
-        auth: {
-          user: process.env.SMTP_USER.trim(),
-          pass: cleanPass,
-        },
-        tls: { rejectUnauthorized: false },
-        connectionTimeout: 15000,
-      });
+    // Build list of ports to try — if SMTP_PORT is set use only that, else try 465 → 587
+    const smtpConfigs = configuredPort
+      ? [{ port: configuredPort, secure: configuredPort === 465 }]
+      : [{ port: 465, secure: true }, { port: 587, secure: false }];
 
-      const info = await transporter.sendMail({
-        from: `"${companyName}" <${process.env.SMTP_USER.trim()}>`,
-        to,
-        subject,
-        text: textBody || '',
-        html: htmlBody,
-      });
-      console.log(`📧 Email successfully sent to ${to} (MessageID: ${info.messageId})`);
-      return { status: 'sent', method: 'smtp', messageId: info.messageId };
-    } catch (err) {
-      console.error(`❌ SMTP delivery failed to ${to}: ${err.message}`);
+    let emailSent = false;
+    for (const cfg of smtpConfigs) {
+      if (emailSent) break;
+      try {
+        console.log(`📤 SMTP attempt: ${smtpHost}:${cfg.port} (${cfg.secure ? 'SSL/TLS' : 'STARTTLS'}) → ${to}`);
+        const transporter = nodemailer.createTransport({
+          host: smtpHost,
+          port: cfg.port,
+          secure: cfg.secure,
+          requireTLS: !cfg.secure,
+          auth: { user: smtpUser, pass: cleanPass },
+          tls: { rejectUnauthorized: false },
+          connectionTimeout: 15000,
+          greetingTimeout: 10000,
+          socketTimeout: 20000,
+        });
+
+        const info = await transporter.sendMail({
+          from: `"${companyName}" <${smtpUser}>`,
+          to,
+          subject,
+          text: textBody || '',
+          html: htmlBody,
+        });
+        console.log(`✅ Email delivered → ${to} via port ${cfg.port} (ID: ${info.messageId})`);
+        emailSent = true;
+        return { status: 'sent', method: `smtp-${cfg.port}`, messageId: info.messageId };
+      } catch (err) {
+        console.error(`❌ SMTP port ${cfg.port} failed for ${to}: [${err.code || err.name}] ${err.message}`);
+      }
+    }
+
+    if (!emailSent) {
+      console.error(`❌ All SMTP attempts exhausted for ${to}. Email NOT delivered.`);
+      console.error(`   ↳ Tip: Set GOOGLE_SCRIPT_URL in .env to use Google Apps Script proxy instead.`);
     }
   }
 

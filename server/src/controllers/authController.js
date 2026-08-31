@@ -89,7 +89,7 @@ async function login(req, res) {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
 
     const result = await pool.query(
-      'SELECT user_id, name, email, phone, password, role, department, is_active FROM users WHERE email = $1',
+      'SELECT user_id, name, email, phone, password, role, department, is_active FROM users WHERE LOWER(email) = LOWER($1)',
       [email]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password.' });

@@ -22,15 +22,29 @@ export default function Login() {
     setLoading(true);
     try {
       const res = await api.post('/auth/login', form);
-      if (res.data.user.role === 'Student') {
-        toast.error('Students track grievances directly via email notifications.');
+      const role = res.data.user.role;
+      // Only Dean, HOD and Faculty can access the staff portal dashboard
+      if (!['Dean', 'HOD', 'Faculty'].includes(role)) {
+        toast.error(
+          'This portal is for Staff only (Dean / HOD / Faculty). ' +
+          'Students receive email updates directly for each grievance stage.'
+        );
         return;
       }
       login(res.data.token, res.data.user);
-      toast.success(`Welcome, ${res.data.user.name}!`);
+      toast.success(`Welcome back, ${res.data.user.name}! 🎉`);
       navigate('/dashboard');
     } catch (err) {
-      toast.error(err.response?.data?.error || 'Login failed.');
+      const msg = err.response?.data?.error || '';
+      if (err.code === 'ERR_NETWORK' || err.message === 'Network Error') {
+        toast.error('Cannot reach server. Please check your internet connection or try again shortly.');
+      } else if (err.response?.status === 401) {
+        toast.error('Invalid email or password. Please check your credentials.');
+      } else if (err.response?.status === 403) {
+        toast.error(msg || 'Your account has been deactivated. Please contact the administration.');
+      } else {
+        toast.error(msg || 'Login failed. Please try again.');
+      }
     } finally { setLoading(false); }
   }
 
