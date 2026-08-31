@@ -6,31 +6,36 @@ const nodemailer = require('nodemailer');
 const https = require('https');
 const http = require('http');
 
-// ─── Google Apps Script GET with manual redirect following ───
-// Google Apps Script Web Apps redirect to googleusercontent.com
-// which ONLY accepts GET requests (POST returns 405). 
-// We pass email data as URL query parameters.
-function httpsGet(url, maxRedirects = 5) {
+// ─── HTTP Request with manual redirect following ─────────────
+// Google Apps Script Web Apps redirect (302) to googleusercontent.com.
+// The redirected URL only accepts GET (POST returns 405).
+// Strategy: GET with query params, following redirects manually.
+function httpsRequest(url, options = {}, maxRedirects = 5) {
   return new Promise((resolve, reject) => {
     if (maxRedirects <= 0) return reject(new Error('Too many redirects'));
 
     const urlObj = new URL(url);
     const httpModule = urlObj.protocol === 'https:' ? https : http;
 
-    const options = {
+    const reqOptions = {
       hostname: urlObj.hostname,
       port: urlObj.protocol === 'https:' ? 443 : 80,
       path: urlObj.pathname + urlObj.search,
-      method: 'GET',
-      headers: { 'User-Agent': 'AharadaPortal/1.0' },
+      method: options.method || 'GET',
+      headers: {
+        'User-Agent': 'AharadaPortal/1.0',
+        ...(options.headers || {}),
+      },
     };
 
-    const req = httpModule.request(options, (res) => {
+    const req = httpModule.request(reqOptions, (res) => {
       if ([301, 302, 307, 308].includes(res.statusCode)) {
         const location = res.headers.location;
         if (!location) return reject(new Error('Redirect with no Location header'));
         res.resume();
-        return httpsGet(location, maxRedirects - 1).then(resolve).catch(reject);
+        // On redirect, always follow with GET (Google's redirect URL rejects POST)
+        return httpsRequest(location, { method: 'GET' }, maxRedirects - 1)
+          .then(resolve).catch(reject);
       }
 
       let body = '';
@@ -41,7 +46,11 @@ function httpsGet(url, maxRedirects = 5) {
     });
 
     req.on('error', reject);
-    req.setTimeout(20000, () => { req.destroy(new Error('Request timeout')); });
+    req.setTimeout(30000, () => { req.destroy(new Error('Request timeout (30s)')); });
+
+    if (options.body) {
+      req.write(options.body);
+    }
     req.end();
   });
 }
@@ -78,42 +87,54 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   if (!to) return console.warn('⚠️  No recipient email provided.');
 
   const companyName = process.env.COLLEGE_NAME || 'Aharada Education';
+  const plainText = textBody || htmlBody.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
   // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
-  //    Uses httpsGet() with query params + manual redirect following.
-  //    Google's redirected URL only accepts GET (POST returns 405).
+  //    Sends full HTML email via GET query params with manual redirect following.
+  //    Google's 302 redirect → googleusercontent.com only accepts GET.
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
       const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
-      const plainText = textBody || htmlBody.replace(/<[^>]+>/g, '');
 
-      // Build URL with query parameters
+      // Build URL with query parameters — include both html and plain text
       const url = new URL(scriptUrlStr);
       url.searchParams.set('to', to);
       url.searchParams.set('subject', subject);
-      // Send plain text body (HTML exceeds URL length limits)
-      url.searchParams.set('body', plainText.substring(0, 1500));
+      // Send HTML body for rich formatting (truncate to safe URL length ~6000 chars)
+      url.searchParams.set('html', htmlBody.substring(0, 6000));
+      url.searchParams.set('text', plainText.substring(0, 1500));
 
-      console.log(`📤 Sending via Google Apps Script Proxy → ${to}`);
-      const response = await httpsGet(url.toString());
+      const fullUrl = url.toString();
+      console.log(`📤 Google Proxy → ${to} | Subject: ${subject.substring(0, 50)}... | URL length: ${fullUrl.length}`);
+
+      // If URL is too long (>8000 chars), fall back to plain text only
+      if (fullUrl.length > 8000) {
+        console.log(`⚠️  URL too long (${fullUrl.length}), sending plain text only`);
+        url.searchParams.delete('html');
+        url.searchParams.set('body', plainText.substring(0, 2000));
+      }
+
+      const response = await httpsRequest(url.toString());
 
       let result;
-      try { result = JSON.parse(response.body); } catch { result = { success: response.statusCode === 200 }; }
+      try { result = JSON.parse(response.body); } catch { result = {}; }
 
       if (result.success || response.statusCode === 200) {
         console.log(`✅ Email sent via Google Apps Script Proxy → ${to}`);
         return { status: 'sent', method: 'google-proxy' };
       } else {
-        throw new Error(result.error || `HTTP ${response.statusCode}: ${response.body.substring(0, 200)}`);
+        const errMsg = result.error || `HTTP ${response.statusCode}: ${(response.body || '').substring(0, 300)}`;
+        throw new Error(errMsg);
       }
     } catch (err) {
-      console.error(`❌ Google Proxy failed: ${err.message} — falling through to SMTP`);
+      console.error(`❌ Google Proxy failed for ${to}: ${err.message}`);
+      console.error(`   ↳ Falling through to SMTP fallback...`);
     }
   }
 
   // 2. Direct Gmail / SMTP Delivery
   //    Tries port 465 (SSL) then 587 (STARTTLS) automatically.
-  //    GoDaddy shared hosting blocks 465 but allows 587 in some plans.
+  //    Note: GoDaddy shared hosting blocks all SMTP ports.
   if (process.env.SMTP_USER && process.env.SMTP_PASS) {
     const smtpHost = process.env.SMTP_HOST || 'smtp.gmail.com';
     const smtpUser = process.env.SMTP_USER.trim();
@@ -125,9 +146,7 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       ? [{ port: configuredPort, secure: configuredPort === 465 }]
       : [{ port: 465, secure: true }, { port: 587, secure: false }];
 
-    let emailSent = false;
     for (const cfg of smtpConfigs) {
-      if (emailSent) break;
       try {
         console.log(`📤 SMTP attempt: ${smtpHost}:${cfg.port} (${cfg.secure ? 'SSL/TLS' : 'STARTTLS'}) → ${to}`);
         const transporter = nodemailer.createTransport({
@@ -146,30 +165,27 @@ async function sendEmail(to, subject, htmlBody, textBody) {
           from: `"${companyName}" <${smtpUser}>`,
           to,
           subject,
-          text: textBody || '',
+          text: plainText,
           html: htmlBody,
         });
         console.log(`✅ Email delivered → ${to} via port ${cfg.port} (ID: ${info.messageId})`);
-        emailSent = true;
         return { status: 'sent', method: `smtp-${cfg.port}`, messageId: info.messageId };
       } catch (err) {
         console.error(`❌ SMTP port ${cfg.port} failed for ${to}: [${err.code || err.name}] ${err.message}`);
       }
     }
 
-    if (!emailSent) {
-      console.error(`❌ All SMTP attempts exhausted for ${to}. Email NOT delivered.`);
-      console.error(`   ↳ Tip: Set GOOGLE_SCRIPT_URL in .env to use Google Apps Script proxy instead.`);
-    }
+    console.error(`❌ All SMTP attempts exhausted for ${to}. Email NOT delivered.`);
+    console.error(`   ↳ Tip: Set GOOGLE_SCRIPT_URL in .env to use Google Apps Script proxy instead.`);
   }
 
-  // 3. Mock Mode (development fallback)
-  console.log('\n📧 ═══════ MOCK EMAIL ═══════');
+  // 3. Mock Mode (development fallback — no email actually sent)
+  console.log('\n📧 ═══════ MOCK EMAIL (NOT DELIVERED) ═══════');
   console.log(`   From:    ${companyName}`);
   console.log(`   To:      ${to}`);
   console.log(`   Subject: ${subject}`);
-  console.log(`   Body:    ${(textBody || '').substring(0, 120)}...`);
-  console.log('════════════════════════════\n');
+  console.log(`   Body:    ${plainText.substring(0, 120)}...`);
+  console.log('══════════════════════════════════════════════\n');
   return { status: 'mock' };
 }
 
