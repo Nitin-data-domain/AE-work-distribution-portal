@@ -101,9 +101,11 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       url.searchParams.set('to', to);
       url.searchParams.set('subject', subject);
       // Send HTML body for rich formatting (truncate to safe URL length ~6000 chars)
-      url.searchParams.set('html', htmlBody.substring(0, 6000));
+      url.searchParams.set('html', htmlBody.substring(0, 4000));
       url.searchParams.set('text', plainText.substring(0, 1500));
       url.searchParams.set('body', plainText.substring(0, 1500));
+      url.searchParams.set('b64html', Buffer.from(htmlBody.substring(0, 4000)).toString('base64'));
+      url.searchParams.set('b64text', Buffer.from(plainText.substring(0, 1500)).toString('base64'));
 
       const fullUrl = url.toString();
       console.log(`📤 Google Proxy → ${to} | Subject: ${subject.substring(0, 50)}... | URL length: ${fullUrl.length}`);
