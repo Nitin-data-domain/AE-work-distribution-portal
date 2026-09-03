@@ -17,10 +17,11 @@ const registrationStore = new Map();
 // ─── POST /api/auth/send-otp ─────────────────────────────────
 async function sendRegistrationOTP(req, res) {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required.' });
+    const rawEmail = req.body.email;
+    if (!rawEmail) return res.status(400).json({ error: 'Email is required.' });
+    const email = rawEmail.trim().toLowerCase();
 
-    const existing = await pool.query('SELECT user_id FROM users WHERE email = $1', [email]);
+    const existing = await pool.query('SELECT user_id FROM users WHERE LOWER(TRIM(email)) = $1', [email]);
     if (existing.rows.length > 0) {
       return res.status(409).json({ error: 'An account with this email already exists.' });
     }
@@ -28,12 +29,17 @@ async function sendRegistrationOTP(req, res) {
     const otp = generateOTP();
     registrationStore.set(email, { otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
 
-    await sendEmail(
-      email,
-      'OTP for Registration — Grievance Portal',
-      `<p>Your OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes.</p>`,
-      `Your registration OTP is: ${otp}. Valid for 10 minutes.`
-    );
+    try {
+      await sendEmail(
+        email,
+        'OTP for Registration — Grievance Portal',
+        `<p>Your OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes.</p>`,
+        `Your registration OTP is: ${otp}. Valid for 10 minutes.`
+      );
+    } catch (emailErr) {
+      console.error(`⚠️ Registration OTP email delivery failed for ${email}:`, emailErr.message);
+    }
+
     res.json({ message: 'OTP sent to your email.' });
   } catch (err) {
     console.error('Send OTP error:', err);
@@ -131,15 +137,16 @@ async function getMe(req, res) {
 // ─── POST /api/auth/forgot-password ──────────────────────────
 async function forgotPassword(req, res) {
   try {
-    const { email } = req.body;
-    if (!email) return res.status(400).json({ error: 'Email is required.' });
+    const rawEmail = req.body.email;
+    if (!rawEmail) return res.status(400).json({ error: 'Email is required.' });
+    const email = rawEmail.trim().toLowerCase();
 
-    const result = await pool.query('SELECT user_id, name FROM users WHERE email = $1', [email]);
+    const result = await pool.query('SELECT user_id, name FROM users WHERE LOWER(TRIM(email)) = $1', [email]);
     if (result.rows.length === 0) return res.status(404).json({ error: 'No account found with this email.' });
 
     const otp = generateOTP();
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
-    await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE LOWER(email) = LOWER($3)', [otp, expiresAt, email]);
+    await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE LOWER(TRIM(email)) = $3', [otp, expiresAt, email]);
 
     // Try to send email — don't fail the request if email delivery fails
     try {
