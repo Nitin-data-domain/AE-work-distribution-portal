@@ -151,19 +151,20 @@ async function getGrievances(req, res) {
       ORDER BY g.created_at DESC
       LIMIT $${idx++} OFFSET $${idx++}`;
 
+    const countParams = [...params];
     params.push(parseInt(limit), offset);
     const result = await pool.query(query, params);
 
     // Count query
-    const countParams = params.slice(0, params.length - 2);
     const countResult = await pool.query(
       `SELECT COUNT(*) AS total FROM grievances g ${whereClause}`,
       countParams
     );
     // MySQL returns count as 'total' (aliased), Postgres as 'count'
-    const total = parseInt(countResult.rows[0].total || countResult.rows[0].count || 0);
+    const totalRow = countResult.rows[0] || {};
+    const total = parseInt(totalRow.total || totalRow.count || 0);
 
-    res.json({ grievances: result.rows, total, page: parseInt(page), limit: parseInt(limit) });
+    res.json({ grievances: result.rows || [], total, page: parseInt(page), limit: parseInt(limit) });
   } catch (err) {
     console.error('Get grievances error:', err);
     res.status(500).json({ error: 'Internal server error' });

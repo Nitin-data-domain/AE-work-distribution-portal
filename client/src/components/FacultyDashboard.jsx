@@ -20,13 +20,23 @@ export default function FacultyDashboard() {
   const [tab, setTab] = useState('active'); // active | resolved
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
       const res = await api.get('/grievances');
-      setTasks(res.data.grievances);
+      setTasks(res.data.grievances || []);
+    } catch (err) {
+      console.error('Failed to load tasks:', err);
+      toast.error(err.response?.data?.error || 'Failed to load tasks.');
+    }
+
+    try {
       const fRes = await api.get('/users/faculty');
-      setFaculty(fRes.data.faculty);
-    } catch { toast.error('Failed to load tasks.'); }
-    finally { setLoading(false); }
+      setFaculty(fRes.data.faculty || []);
+    } catch (err) {
+      console.error('Failed to load faculty list:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);

@@ -84,10 +84,11 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
       formattedSql = formattedSql.replace(/::int/gi, '');
 
       // 5. Cast LIMIT and OFFSET params to integers (mysql2 execute doesn't support ? for LIMIT/OFFSET)
+      const queryParams = [...params];
       const limitMatch = formattedSql.match(/LIMIT\s+\?\s+OFFSET\s+\?/i);
-      if (limitMatch && params.length >= 2) {
-        const offsetVal = parseInt(params.pop());
-        const limitVal = parseInt(params.pop());
+      if (limitMatch && queryParams.length >= 2) {
+        const offsetVal = parseInt(queryParams.pop());
+        const limitVal = parseInt(queryParams.pop());
         formattedSql = formattedSql.replace(
           /LIMIT\s+\?\s+OFFSET\s+\?/i,
           `LIMIT ${limitVal} OFFSET ${offsetVal}`
@@ -95,7 +96,7 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
       }
 
       // Use query() instead of execute() for broader compatibility
-      const [results] = await mysqlPool.query(formattedSql, params);
+      const [results] = await mysqlPool.query(formattedSql, queryParams);
       
       let rows = Array.isArray(results) ? results : [];
 
