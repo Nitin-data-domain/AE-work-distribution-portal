@@ -30,8 +30,13 @@ export default function Layout({ children }) {
     <div className="app-shell">
       <aside className="sidebar">
         <div className="sidebar-logo">
-          <h2><MdSchool style={{ verticalAlign: 'middle', marginRight: 6 }} />{collegeName}</h2>
-          <span>Staff Portal</span>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+            <img src="/logo.png" alt="Aharada Education" style={{ width: 36, height: 36, objectFit: 'contain' }} />
+            <div>
+              <h2>{collegeName}</h2>
+              <span>Staff Portal</span>
+            </div>
+          </div>
         </div>
 
         <nav className="sidebar-nav">
