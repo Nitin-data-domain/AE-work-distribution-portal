@@ -119,11 +119,16 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       let result;
       try { result = JSON.parse(response.body); } catch { result = {}; }
 
-      if (result.success || response.statusCode === 200) {
+      if (result && result.success === true) {
         console.log(`✅ Email sent via Google Apps Script Proxy → ${to}`);
         return { status: 'sent', method: 'google-proxy' };
       } else {
-        const errMsg = result.error || `HTTP ${response.statusCode}: ${(response.body || '').substring(0, 300)}`;
+        let errMsg = result.error;
+        if (!errMsg && (response.body.includes('<!DOCTYPE html>') || response.body.includes('accounts.google.com'))) {
+          errMsg = 'Google Apps Script access blocked by Google Sign-In. Set "Who has access" to "Anyone" in deployment settings.';
+        } else if (!errMsg) {
+          errMsg = `HTTP ${response.statusCode}: ${(response.body || '').substring(0, 300)}`;
+        }
         throw new Error(errMsg);
       }
     } catch (err) {
