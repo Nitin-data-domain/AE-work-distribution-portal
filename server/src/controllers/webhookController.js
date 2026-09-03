@@ -103,6 +103,7 @@ async function handleGoogleFormWebhook(req, res) {
             grievanceId: grievance.grievance_id,
             title: gTitle,
             description: problem_desc,
+            phone: phone,
           })
         );
 

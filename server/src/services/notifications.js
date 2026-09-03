@@ -5,6 +5,7 @@
 const nodemailer = require('nodemailer');
 const https = require('https');
 const http = require('http');
+const { sendSMS } = require('./sms');
 
 // ─── HTTP Request with manual redirect following ─────────────
 // Google Apps Script Web Apps redirect (302) to googleusercontent.com.
@@ -285,7 +286,13 @@ function statusBadge(status) {
  * Stage 0 — Student submits via Google Form OR Portal
  * → Email to Student: confirmation
  */
-async function notifyStudentSubmission({ studentEmail, studentName, grievanceId, title, description }) {
+async function notifyStudentSubmission({ studentEmail, studentName, grievanceId, title, description, phone, studentPhone }) {
+  const targetPhone = phone || studentPhone;
+  if (targetPhone) {
+    sendSMS(targetPhone, `Aharada Education: Your task #${grievanceId} ("${(title || '').substring(0, 30)}") has been received and registered. Status: Submitted.`)
+      .catch(err => console.error('SMS notification error:', err.message));
+  }
+
   const sName = formatStudentName(studentName);
   const subject = `[Aharada Education] Grievance Received — Ticket #${grievanceId}`;
   const html = buildHtml(`Grievance Registered — Ticket #${grievanceId}`, `
@@ -453,7 +460,13 @@ async function notifyStudentRemark({ studentEmail, studentName, facultyName, gri
 /**
  * Task Resolved → Notify Student
  */
-async function notifyStudentResolved({ studentEmail, studentName, facultyName, grievanceId, title, remark, fileUrl }) {
+async function notifyStudentResolved({ studentEmail, studentName, facultyName, grievanceId, title, remark, fileUrl, phone, studentPhone }) {
+  const targetPhone = phone || studentPhone;
+  if (targetPhone) {
+    sendSMS(targetPhone, `Aharada Education: Your task #${grievanceId} ("${(title || '').substring(0, 30)}") has been RESOLVED by ${facultyName || 'Staff'}. Check email for details.`)
+      .catch(err => console.error('SMS notification error:', err.message));
+  }
+
   const sName = formatStudentName(studentName);
   const fName = formatFacultyName(facultyName);
   const subject = `[Aharada Education] Ticket #${grievanceId} Has Been Resolved!`;
