@@ -1,7 +1,16 @@
 import axios from 'axios';
 
+const getBaseUrl = () => {
+  const envUrl = import.meta.env.VITE_API_URL;
+  // If envUrl is missing, relative, or points to a preview/airoapp domain, force same-origin '/api' to bypass CORS entirely
+  if (!envUrl || envUrl.startsWith('/') || envUrl.includes('airoapp.ai')) {
+    return '/api';
+  }
+  return envUrl;
+};
+
 const api = axios.create({
-  baseURL: import.meta.env.VITE_API_URL || '/api',
+  baseURL: getBaseUrl(),
   timeout: 30000,
 });
 
