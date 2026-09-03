@@ -31,8 +31,8 @@ export default function Layout({ children }) {
       <aside className="sidebar">
         <div className="sidebar-logo">
           <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
-            <img src="/logo-full.png" alt="Aharada Education" style={{ maxHeight: 48, maxWidth: '100%', objectFit: 'contain' }} />
-            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--slate-500)', fontWeight: 600 }}>Staff Portal</span>
+            <img src="/logo-white.png" alt="Aharada Education" style={{ maxHeight: 52, maxWidth: '100%', objectFit: 'contain' }} />
+            <span style={{ fontSize: 11, textTransform: 'uppercase', letterSpacing: '0.08em', color: 'rgba(255,255,255,0.75)', fontWeight: 600, marginTop: 4 }}>Staff Portal</span>
           </div>
         </div>
 
