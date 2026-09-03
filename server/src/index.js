@@ -20,21 +20,17 @@ const PORT = process.env.PORT || 5000;
 const uploadsDir = path.join(__dirname, '..', 'uploads');
 if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
 
-// ─── CORS ─────────────────────────────────────────────────────
-const allowedOrigins = process.env.ALLOWED_ORIGINS
-  ? process.env.ALLOWED_ORIGINS.split(',').map(o => o.trim())
-  : ['http://localhost:5173', 'http://localhost:3000'];
-
 app.use(cors({
   origin: (origin, callback) => {
-    if (!origin || allowedOrigins.includes(origin) || allowedOrigins.includes('*') || origin.includes('airoapp.ai')) {
-      callback(null, true);
-    } else {
-      callback(null, true); // Allow request to avoid CORS blocking production previews
-    }
+    // Mirror the request origin to allow CORS with credentials across all environments/subdomains
+    if (!origin) return callback(null, true);
+    callback(null, origin);
   },
   credentials: true,
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
 }));
+app.options('*', cors());
 
 // ─── Middleware ───────────────────────────────────────────────
 app.use(express.json({ limit: '10mb' }));
