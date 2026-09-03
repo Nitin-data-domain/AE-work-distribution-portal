@@ -86,6 +86,11 @@ function formatStudentName(name) {
 async function sendEmail(to, subject, htmlBody, textBody) {
   if (!to) return console.warn('⚠️  No recipient email provided.');
 
+  // Clean emoji/special non-ASCII characters from subject line to prevent diamond question marks () in email clients
+  const cleanSubject = (subject || '')
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
+    .trim();
+
   const companyName = process.env.COLLEGE_NAME || 'Aharada Education';
   const plainText = textBody || htmlBody.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
@@ -96,15 +101,15 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
 
       // Encode UTF-8 Base64 for subject, html, text to prevent URL garbling & length issues
-      const b64subject = Buffer.from(subject, 'utf-8').toString('base64');
+      const b64subject = Buffer.from(cleanSubject, 'utf-8').toString('base64');
       const b64html = Buffer.from(htmlBody, 'utf-8').toString('base64');
       const b64text = Buffer.from(plainText, 'utf-8').toString('base64');
 
       let response;
-      // Attempt 1: POST request with JSON body (handles large templates & emojis cleanly)
+      // Attempt 1: POST request with JSON body (handles large templates cleanly)
       try {
         const postPayload = JSON.stringify({
-          to, subject, html: htmlBody, text: plainText,
+          to, subject: cleanSubject, html: htmlBody, text: plainText,
           b64subject, b64html, b64text
         });
         const postRes = await httpsRequest(scriptUrlStr, {
@@ -129,14 +134,12 @@ async function sendEmail(to, subject, htmlBody, textBody) {
       if (!response) {
         const url = new URL(scriptUrlStr);
         url.searchParams.set('to', to);
-        // Clean subject for GET fallback to strip non-ASCII emojis if old proxy is running
-        const safeSubject = subject.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
-        url.searchParams.set('subject', safeSubject);
+        url.searchParams.set('subject', cleanSubject);
         url.searchParams.set('b64subject', b64subject);
         url.searchParams.set('b64html', b64html);
         url.searchParams.set('b64text', b64text);
         
-        console.log(`📤 Google Proxy GET → ${to} | Subject: ${safeSubject.substring(0, 50)}...`);
+        console.log(`📤 Google Proxy GET → ${to} | Subject: ${cleanSubject.substring(0, 50)}...`);
         response = await httpsRequest(url.toString());
       }
 
@@ -284,7 +287,7 @@ function statusBadge(status) {
  */
 async function notifyStudentSubmission({ studentEmail, studentName, grievanceId, title, description }) {
   const sName = formatStudentName(studentName);
-  const subject = `✅ [Aharada Education] Grievance Received — Ticket #${grievanceId}`;
+  const subject = `[Aharada Education] Grievance Received — Ticket #${grievanceId}`;
   const html = buildHtml(`Grievance Registered — Ticket #${grievanceId}`, `
     <p>Dear <strong>${sName}</strong>,</p>
     <p>Your grievance has been <strong>successfully registered</strong> with Aharada Education. Our administration team will review it and take appropriate action shortly.</p>
@@ -306,7 +309,7 @@ async function notifyStudentSubmission({ studentEmail, studentName, grievanceId,
 async function notifyAdminNewGrievance({ adminUser, studentName, grievanceId, title, description, programName, source, fileUrl }) {
   const adminName = cleanName(adminUser.name);
   const sName = formatStudentName(studentName);
-  const subject = `🚨 [Aharada Education] New Grievance Submitted — Ticket #${grievanceId}`;
+  const subject = `[Aharada Education] New Grievance Submitted — Ticket #${grievanceId}`;
   const fileLink = fileUrl ? `<a href="${fileUrl}" target="_blank" style="color:#2563EB;font-weight:600;text-decoration:underline;">📎 View Attachment File</a>` : 'None';
   const html = buildHtml(`New Student Grievance — Action Required`, `
     <p>Dear <strong>${adminName}</strong>,</p>
@@ -334,7 +337,7 @@ async function notifyFacultyAssigned({ facultyUser, grievanceId, title, descript
   const fName = formatFacultyName(facultyUser.name);
   const aName = cleanName(assignedByName);
   const sName = formatStudentName(studentName);
-  const subject = `📌 [Aharada Education] New Task Assigned to You — Ticket #${grievanceId}`;
+  const subject = `[Aharada Education] New Task Assigned to You — Ticket #${grievanceId}`;
   const html = buildHtml(`Task Delegated — Ticket #${grievanceId}`, `
     <p>Dear <strong>${fName}</strong>,</p>
     <p>A task has been delegated to you by <strong>${aName}</strong> at Aharada Education. Please review and take necessary action.</p>
@@ -379,7 +382,7 @@ async function notifyFacultyReassigned({ newFaculty, grievanceId, title, reassig
   const fName = formatFacultyName(newFaculty.name);
   const rName = cleanName(reassignedByName);
   const sName = formatStudentName(studentName);
-  const subject = `🔄 [Aharada Education] Task Reassigned to You — Ticket #${grievanceId}`;
+  const subject = `[Aharada Education] Task Reassigned to You — Ticket #${grievanceId}`;
   const html = buildHtml(`Task Reassigned — Ticket #${grievanceId}`, `
     <p>Dear <strong>${fName}</strong>,</p>
     <p>Ticket #${grievanceId} has been reassigned to you by <strong>${rName}</strong>.</p>
@@ -453,7 +456,7 @@ async function notifyStudentRemark({ studentEmail, studentName, facultyName, gri
 async function notifyStudentResolved({ studentEmail, studentName, facultyName, grievanceId, title, remark, fileUrl }) {
   const sName = formatStudentName(studentName);
   const fName = formatFacultyName(facultyName);
-  const subject = `🎉 [Aharada Education] Ticket #${grievanceId} Has Been Resolved!`;
+  const subject = `[Aharada Education] Ticket #${grievanceId} Has Been Resolved!`;
   const publicFileUrl = fileUrl ? (fileUrl.startsWith('http') ? fileUrl : `${process.env.BASE_URL || 'http://localhost:5000'}${fileUrl.startsWith('/') ? '' : '/'}${fileUrl}`) : null;
 
   const html = buildHtml(`Your Grievance Has Been Resolved`, `
@@ -486,7 +489,7 @@ async function notifyAdminResolved({ adminUser, facultyName, grievanceId, title,
   const adminName = cleanName(adminUser.name);
   const fName = formatFacultyName(facultyName);
   const sName = formatStudentName(studentName);
-  const subject = `✅ [Aharada Education] Ticket #${grievanceId} Resolved by ${fName}`;
+  const subject = `[Aharada Education] Ticket #${grievanceId} Resolved by ${fName}`;
   const html = buildHtml(`Grievance Resolved — For Your Records`, `
     <p>Dear <strong>${adminName}</strong>,</p>
     <p>Ticket #${grievanceId} (Student: <strong>${sName}</strong>) has been marked as <strong>RESOLVED</strong> by <strong>${fName}</strong>.</p>
@@ -520,7 +523,7 @@ async function notifyAdminResolved({ adminUser, facultyName, grievanceId, title,
 async function notifyAdminInternalUpdate({ adminUser, facultyName, grievanceId, title, status, remark_student, remark_internal, remark }) {
   const adminName = cleanName(adminUser.name);
   const fName = formatFacultyName(facultyName);
-  const subject = `📋 [Aharada Education] Internal Task #${grievanceId} Updated by ${fName}`;
+  const subject = `[Aharada Education] Internal Task #${grievanceId} Updated by ${fName}`;
   
   const studentRemarkText = remark_student || (remark && !remark_internal ? remark : null);
   const internalRemarkText = remark_internal || (remark && remark !== remark_student ? remark : null);
@@ -556,7 +559,7 @@ async function notifyAdminInternalUpdate({ adminUser, facultyName, grievanceId, 
 async function notifyFacultyInternalTask({ facultyUser, grievanceId, title, description, assignedByName }) {
   const fName = formatFacultyName(facultyUser.name);
   const aName = cleanName(assignedByName);
-  const subject = `📋 [Aharada Education] Internal Task Assigned — #${grievanceId}`;
+  const subject = `[Aharada Education] Internal Task Assigned — #${grievanceId}`;
   const html = buildHtml(`Internal Task Assigned to You`, `
     <p>Dear <strong>${fName}</strong>,</p>
     <p>An internal administrative task has been assigned to you by <strong>${aName}</strong> at Aharada Education.</p>
@@ -579,7 +582,7 @@ async function notifyHODInternalTaskCreated({ hodUser, facultyName, grievanceId,
   const hName = cleanName(hodUser.name);
   const fName = formatFacultyName(facultyName);
   const aName = cleanName(assignedByName);
-  const subject = `📋 [Aharada Education] Internal Task Created & Assigned to ${fName} — Task #${grievanceId}`;
+  const subject = `[Aharada Education] Internal Task Created & Assigned to ${fName} — Task #${grievanceId}`;
   const html = buildHtml(`Internal Task Created & Assigned`, `
     <p>Dear <strong>${hName}</strong>,</p>
     <p>Dean <strong>${aName}</strong> has created an internal task and assigned it to <strong>${fName}</strong>.</p>
