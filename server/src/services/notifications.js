@@ -90,34 +90,55 @@ async function sendEmail(to, subject, htmlBody, textBody) {
   const plainText = textBody || htmlBody.replace(/<[^>]+>/g, '').replace(/\s+/g, ' ').trim();
 
   // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
-  //    Sends full HTML email via GET query params with manual redirect following.
-  //    Google's 302 redirect → googleusercontent.com only accepts GET.
+  //    Sends full HTML email via POST (or GET with Base64 encoding).
   if (process.env.GOOGLE_SCRIPT_URL) {
     try {
       const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
 
-      // Build URL with query parameters — include both html and plain text
-      const url = new URL(scriptUrlStr);
-      url.searchParams.set('to', to);
-      url.searchParams.set('subject', subject);
-      // Send HTML body for rich formatting (truncate to safe URL length ~6000 chars)
-      url.searchParams.set('html', htmlBody.substring(0, 4000));
-      url.searchParams.set('text', plainText.substring(0, 1500));
-      url.searchParams.set('body', plainText.substring(0, 1500));
-      url.searchParams.set('b64html', Buffer.from(htmlBody.substring(0, 4000)).toString('base64'));
-      url.searchParams.set('b64text', Buffer.from(plainText.substring(0, 1500)).toString('base64'));
+      // Encode UTF-8 Base64 for subject, html, text to prevent URL garbling & length issues
+      const b64subject = Buffer.from(subject, 'utf-8').toString('base64');
+      const b64html = Buffer.from(htmlBody, 'utf-8').toString('base64');
+      const b64text = Buffer.from(plainText, 'utf-8').toString('base64');
 
-      const fullUrl = url.toString();
-      console.log(`📤 Google Proxy → ${to} | Subject: ${subject.substring(0, 50)}... | URL length: ${fullUrl.length}`);
+      let response;
+      // Attempt 1: POST request with JSON body (handles large templates & emojis cleanly)
+      try {
+        const postPayload = JSON.stringify({
+          to, subject, html: htmlBody, text: plainText,
+          b64subject, b64html, b64text
+        });
+        const postRes = await httpsRequest(scriptUrlStr, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'Content-Length': Buffer.byteLength(postPayload),
+          },
+          body: postPayload,
+        });
 
-      // If URL is too long (>8000 chars), fall back to plain text only
-      if (fullUrl.length > 8000) {
-        console.log(`⚠️  URL too long (${fullUrl.length}), sending plain text only`);
-        url.searchParams.delete('html');
-        url.searchParams.set('body', plainText.substring(0, 2000));
+        let testJson;
+        try { testJson = JSON.parse(postRes.body); } catch { testJson = null; }
+        if (testJson && testJson.success === true) {
+          response = postRes;
+        }
+      } catch (postErr) {
+        response = null;
       }
 
-      const response = await httpsRequest(url.toString());
+      // Attempt 2: Fallback to GET with Base64 parameters if POST was not supported
+      if (!response) {
+        const url = new URL(scriptUrlStr);
+        url.searchParams.set('to', to);
+        // Clean subject for GET fallback to strip non-ASCII emojis if old proxy is running
+        const safeSubject = subject.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{1F700}-\u{1F77F}\u{1F780}-\u{1F7FF}\u{1F900}-\u{1F9FF}\u{1FA00}-\u{1FA6F}\u{1FA70}-\u{1FAFF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '').trim();
+        url.searchParams.set('subject', safeSubject);
+        url.searchParams.set('b64subject', b64subject);
+        url.searchParams.set('b64html', b64html);
+        url.searchParams.set('b64text', b64text);
+        
+        console.log(`📤 Google Proxy GET → ${to} | Subject: ${safeSubject.substring(0, 50)}...`);
+        response = await httpsRequest(url.toString());
+      }
 
       let result;
       try { result = JSON.parse(response.body); } catch { result = {}; }
