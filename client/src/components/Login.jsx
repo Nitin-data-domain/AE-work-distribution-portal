@@ -72,8 +72,8 @@ export default function Login() {
     <div className="auth-wrapper">
       <div className="auth-card">
         <div className="auth-logo">
-          <img src="/logo.png" alt="Aharada Education Logo" style={{ width: 68, height: 68, objectFit: 'contain', marginBottom: 12 }} />
-          <h1>{collegeName}</h1>
+          <img src="/logo-full.png" alt="Aharada Education Logo" style={{ maxWidth: 260, height: 'auto', objectFit: 'contain', marginBottom: 16 }} />
+          <h1 style={{ fontSize: 22, marginTop: 4 }}>{collegeName}</h1>
           <p>{forgot ? 'Reset Password' : 'Grievance & Task Management Portal'}</p>
         </div>
 
