@@ -5,7 +5,7 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
-const { sendEmail } = require('../services/notifications');
+const { sendEmail, buildHtml } = require('../services/notifications');
 
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
@@ -29,12 +29,23 @@ async function sendRegistrationOTP(req, res) {
     const otp = generateOTP();
     registrationStore.set(email, { otp, expiresAt: new Date(Date.now() + 10 * 60 * 1000) });
 
+    const htmlContent = buildHtml('Account Registration OTP', `
+      <p>Dear Student,</p>
+      <p>Thank you for registering with Aharada Education. Use the verification code below to complete your registration:</p>
+      <div style="background:#F0F9FF;border:2px dashed #2563EB;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
+        <p style="margin:0 0 8px 0;color:#1E40AF;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Your OTP Verification Code</p>
+        <div style="font-size:36px;font-weight:800;color:#2563EB;letter-spacing:6px;font-family:monospace;">${otp}</div>
+        <p style="margin:8px 0 0 0;color:#64748B;font-size:12px;">Valid for 10 minutes</p>
+      </div>
+      <p style="color:#64748B;font-size:13px;">If you did not request this, please ignore this email.</p>
+    `);
+
     try {
       await sendEmail(
         email,
         'OTP for Registration — Grievance Portal',
-        `<p>Your OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes.</p>`,
-        `Your registration OTP is: ${otp}. Valid for 10 minutes.`
+        htmlContent,
+        `Your Aharada Education registration OTP is: ${otp}. Valid for 10 minutes.`
       );
     } catch (emailErr) {
       console.error(`⚠️ Registration OTP email delivery failed for ${email}:`, emailErr.message);
@@ -148,13 +159,26 @@ async function forgotPassword(req, res) {
     const expiresAt = new Date(Date.now() + 10 * 60 * 1000).toISOString().slice(0, 19).replace('T', ' ');
     await pool.query('UPDATE users SET otp = $1, otp_expires = $2 WHERE LOWER(TRIM(email)) = $3', [otp, expiresAt, email]);
 
+    const userName = result.rows[0]?.name || 'User';
+
+    const htmlContent = buildHtml('Password Reset OTP', `
+      <p>Dear <strong>${userName}</strong>,</p>
+      <p>You requested a password reset for your Aharada Education account. Use the verification code below to reset your password:</p>
+      <div style="background:#F0F9FF;border:2px dashed #2563EB;border-radius:12px;padding:24px;text-align:center;margin:24px 0;">
+        <p style="margin:0 0 8px 0;color:#1E40AF;font-size:14px;font-weight:600;text-transform:uppercase;letter-spacing:1px;">Password Reset Verification Code</p>
+        <div style="font-size:36px;font-weight:800;color:#2563EB;letter-spacing:6px;font-family:monospace;">${otp}</div>
+        <p style="margin:8px 0 0 0;color:#64748B;font-size:12px;">Valid for 10 minutes</p>
+      </div>
+      <p style="color:#64748B;font-size:13px;">If you did not request this password reset, please ignore this email.</p>
+    `);
+
     // Try to send email — don't fail the request if email delivery fails
     try {
       await sendEmail(
         email,
         'Password Reset OTP — Aharada Education',
-        `<p>Your password reset OTP is: <strong style="font-size:24px;color:#2563EB;">${otp}</strong><br>Valid for 10 minutes. If you did not request this, please ignore.</p>`,
-        `Your password reset OTP is: ${otp}. Valid for 10 minutes.`
+        htmlContent,
+        `Your Aharada Education password reset OTP is: ${otp}. Valid for 10 minutes.`
       );
       console.log(`✅ OTP email sent to ${email}`);
     } catch (emailErr) {
