@@ -45,12 +45,23 @@ export default function HODDashboard() {
   const [exporting, setExporting]     = useState(false);
 
   const load = useCallback(async () => {
+    setLoading(true);
     try {
-      const [gRes, fRes] = await Promise.all([api.get('/grievances'), api.get('/users/faculty')]);
-      setGrievances(gRes.data.grievances);
-      setFaculty(fRes.data.faculty);
-    } catch { toast.error('Failed to load data.'); }
-    finally { setLoading(false); }
+      const gRes = await api.get('/grievances');
+      setGrievances(gRes.data.grievances || []);
+    } catch (err) {
+      console.error('Failed to load grievances:', err);
+      toast.error(err.response?.data?.error || 'Failed to load grievances.');
+    }
+
+    try {
+      const fRes = await api.get('/users/faculty');
+      setFaculty(fRes.data.faculty || []);
+    } catch (err) {
+      console.error('Failed to load faculty list:', err);
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
   useEffect(() => { load(); }, [load]);
@@ -63,9 +74,13 @@ export default function HODDashboard() {
         api.get(`/reports/monthly?year=${reportYear}`),
       ]);
       setSummary(sRes.data.summary);
-      setMonthly(mRes.data.report);
-    } catch { toast.error('Failed to load report.'); }
-    finally { setReportLoading(false); }
+      setMonthly(mRes.data.report || []);
+    } catch (err) {
+      console.error('Failed to load report:', err);
+      toast.error(err.response?.data?.error || 'Failed to load report.');
+    } finally {
+      setReportLoading(false);
+    }
   }
 
   useEffect(() => { if (tab === 'reports') loadReport(); }, [tab, reportYear]);

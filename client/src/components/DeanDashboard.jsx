@@ -41,19 +41,26 @@ export default function DeanDashboard() {
   const [filterSource, setFilterSource] = useState('');
 
   const loadData = useCallback(async () => {
+    setLoading(true);
     try {
-      const [gRes, fRes, hRes, uRes] = await Promise.all([
-        api.get('/grievances'),
+      const gRes = await api.get('/grievances');
+      setGrievances(gRes.data.grievances || []);
+    } catch (err) {
+      console.error('Failed to load grievances:', err);
+      toast.error(err.response?.data?.error || 'Failed to load grievances.');
+    }
+
+    try {
+      const [fRes, hRes, uRes] = await Promise.all([
         api.get('/users/faculty'),
         api.get('/users/hods'),
         api.get('/users'),
       ]);
-      setGrievances(gRes.data.grievances);
-      setFaculty(fRes.data.faculty);
-      setHods(hRes.data.hods);
-      setAllUsers(uRes.data.users);
-    } catch {
-      toast.error('Failed to load portal data.');
+      setFaculty(fRes.data.faculty || []);
+      setHods(hRes.data.hods || []);
+      setAllUsers(uRes.data.users || []);
+    } catch (err) {
+      console.error('Failed to load user lists:', err);
     } finally {
       setLoading(false);
     }

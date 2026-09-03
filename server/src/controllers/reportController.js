@@ -52,11 +52,9 @@ async function getMonthlyReport(req, res) {
   try {
     const year = parseInt(req.query.year) || new Date().getFullYear();
 
-    // PostgreSQL: EXTRACT + TO_CHAR for month name
     const result = await pool.query(`
       SELECT
         EXTRACT(MONTH FROM created_at)::int                        AS month,
-        TO_CHAR(created_at, 'Month')                               AS month_name,
         COUNT(*)                                                   AS total,
         SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
         SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
@@ -65,7 +63,7 @@ async function getMonthlyReport(req, res) {
         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
       WHERE EXTRACT(YEAR FROM created_at)::int = $1
-      GROUP BY EXTRACT(MONTH FROM created_at)::int, TO_CHAR(created_at, 'Month')
+      GROUP BY EXTRACT(MONTH FROM created_at)::int
       ORDER BY month ASC
     `, [year]);
 
@@ -76,7 +74,7 @@ async function getMonthlyReport(req, res) {
       const found = result.rows.find(r => parseInt(r.month) === i + 1);
       return found ? {
         month: parseInt(found.month),
-        month_name: (found.month_name || name).trim(),
+        month_name: name,
         total: String(found.total || 0),
         submitted: String(found.submitted || 0),
         assigned: String(found.assigned || 0),
@@ -94,7 +92,7 @@ async function getMonthlyReport(req, res) {
     res.json({ year, report: filled });
   } catch (err) {
     console.error('Get monthly report error:', err);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: 'Internal server error: ' + err.message });
   }
 }
 
@@ -104,11 +102,9 @@ async function exportExcel(req, res) {
     const year = parseInt(req.query.year) || new Date().getFullYear();
     const collegeName = process.env.COLLEGE_NAME || 'College Grievance Portal';
 
-    // Fetch monthly data (PostgreSQL-compatible)
     const result = await pool.query(`
       SELECT
         EXTRACT(MONTH FROM created_at)::int                        AS month,
-        TO_CHAR(created_at, 'Month')                               AS month_name,
         COUNT(*)                                                   AS total,
         SUM(CASE WHEN status = 'Submitted' THEN 1 ELSE 0 END)     AS submitted,
         SUM(CASE WHEN status = 'Assigned' THEN 1 ELSE 0 END)      AS assigned,
@@ -117,7 +113,7 @@ async function exportExcel(req, res) {
         SUM(CASE WHEN status = 'Closed' THEN 1 ELSE 0 END)        AS closed
       FROM grievances
       WHERE EXTRACT(YEAR FROM created_at)::int = $1
-      GROUP BY EXTRACT(MONTH FROM created_at)::int, TO_CHAR(created_at, 'Month')
+      GROUP BY EXTRACT(MONTH FROM created_at)::int
       ORDER BY month ASC
     `, [year]);
 
