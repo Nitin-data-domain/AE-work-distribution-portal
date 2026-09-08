@@ -321,30 +321,30 @@ export default function DeanDashboard() {
                 <table className="table">
                   <thead>
                     <tr>
-                      <th>Staff Name</th>
-                      <th>Role</th>
-                      <th>Email / Username</th>
-                      <th>Phone</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Staff Name</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Role</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Email / Username</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Phone</th>
                       <th>Department</th>
-                      <th>Status</th>
-                      <th>Actions</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Status</th>
+                      <th style={{ whiteSpace: 'nowrap' }}>Actions</th>
                     </tr>
                   </thead>
                   <tbody>
                     {allUsers.filter(u => u.role !== 'Student').map(u => (
                       <tr key={u.user_id}>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <strong style={{ color: 'var(--slate-800)' }}>{u.name}</strong>
                         </td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           <span className={`badge ${u.role === 'Dean' ? 'badge-closed' : u.role === 'HOD' ? 'badge-internal' : 'badge-assigned'}`}>
                             {u.role}
                           </span>
                         </td>
-                        <td style={{ fontFamily: 'monospace', fontSize: 13 }}>{u.email}</td>
-                        <td style={{ fontSize: 13 }}>{u.phone || '—'}</td>
+                        <td style={{ fontFamily: 'monospace', fontSize: 13, whiteSpace: 'nowrap' }}>{u.email}</td>
+                        <td style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{u.phone || '—'}</td>
                         <td style={{ fontSize: 13 }}>{u.department || 'General'}</td>
-                        <td>
+                        <td style={{ whiteSpace: 'nowrap' }}>
                           {u.is_active ? (
                             <span style={{ color: 'var(--green-700)', fontWeight: 600, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
                               <FiCheckCircle /> Active
@@ -355,8 +355,8 @@ export default function DeanDashboard() {
                             </span>
                           )}
                         </td>
-                        <td>
-                          <div style={{ display: 'flex', gap: 6 }}>
+                        <td style={{ whiteSpace: 'nowrap' }}>
+                          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
                             <button className="btn btn-secondary btn-sm" title="Edit Credentials" onClick={() => openEditUserModal(u)}>
                               <FiEdit2 /> Edit
                             </button>
@@ -613,6 +613,7 @@ export default function DeanDashboard() {
                     <select className="form-control" value={userForm.role} onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}>
                       <option value="Faculty">Faculty</option>
                       <option value="HOD">HOD</option>
+                      <option value="Dean">Dean</option>
                     </select>
                   </div>
                 </div>

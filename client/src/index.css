@@ -207,6 +207,8 @@ select.form-control { cursor: pointer; }
   white-space: nowrap;
 }
 .table td { padding: 13px 16px; border-bottom: 1px solid var(--slate-100); color: var(--slate-700); vertical-align: middle; }
+.table td.cell-nowrap, .table th.cell-nowrap { white-space: nowrap; }
+.table td.phone-cell { white-space: nowrap; font-variant-numeric: tabular-nums; }
 .table tbody tr:hover { background: var(--blue-50); }
 .table tbody tr:last-child td { border-bottom: none; }
 

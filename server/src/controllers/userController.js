@@ -57,12 +57,12 @@ async function createUser(req, res) {
     if (!name || !email || !password || !role) {
       return res.status(400).json({ error: 'Name, email, password, and role are required.' });
     }
-    const allowed = ['Faculty', 'HOD'];
+    const allowed = ['Faculty', 'HOD', 'Dean'];
     if (!allowed.includes(role)) {
-      return res.status(400).json({ error: 'Role must be Faculty or HOD.' });
+      return res.status(400).json({ error: 'Role must be Faculty, HOD, or Dean.' });
     }
 
-    const existing = await pool.query('SELECT user_id FROM users WHERE email = $1', [email]);
+    const existing = await pool.query('SELECT user_id FROM users WHERE email = $1', [email.trim()]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already in use.' });
 
     const hashed = await bcrypt.hash(password, 10);
@@ -70,7 +70,7 @@ async function createUser(req, res) {
       `INSERT INTO users (name, email, phone, password, role, department)
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING user_id, name, email, phone, role, department, is_active`,
-      [name, email, phone || null, hashed, role, department || null]
+      [name.trim(), email.trim(), phone ? phone.trim() : null, hashed, role, department ? department.trim() : null]
     );
     res.status(201).json({ message: `${role} account created.`, user: result.rows[0] });
   } catch (err) {
@@ -83,18 +83,40 @@ async function createUser(req, res) {
 async function updateUser(req, res) {
   try {
     const { id } = req.params;
-    const { name, email, phone, password, department } = req.body;
+    const { name, email, phone, password, department, role } = req.body;
 
     const updates = [];
     const params = [];
     let idx = 1;
 
-    if (name)       { updates.push(`name = $${idx++}`);       params.push(name); }
-    if (email)      { updates.push(`email = $${idx++}`);      params.push(email); }
-    if (phone)      { updates.push(`phone = $${idx++}`);      params.push(phone); }
-    if (department) { updates.push(`department = $${idx++}`); params.push(department); }
-    if (password) {
-      const hashed = await bcrypt.hash(password, 10);
+    if (name) {
+      updates.push(`name = $${idx++}`);
+      params.push(name.trim());
+    }
+    if (email) {
+      const existing = await pool.query('SELECT user_id FROM users WHERE email = $1 AND user_id != $2', [email.trim(), id]);
+      if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already in use.' });
+      updates.push(`email = $${idx++}`);
+      params.push(email.trim());
+    }
+    if (phone !== undefined) {
+      updates.push(`phone = $${idx++}`);
+      params.push(phone ? phone.trim() : null);
+    }
+    if (department !== undefined) {
+      updates.push(`department = $${idx++}`);
+      params.push(department ? department.trim() : null);
+    }
+    if (role) {
+      const allowed = ['Faculty', 'HOD', 'Dean'];
+      if (!allowed.includes(role)) {
+        return res.status(400).json({ error: 'Role must be Faculty, HOD, or Dean.' });
+      }
+      updates.push(`role = $${idx++}`);
+      params.push(role);
+    }
+    if (password && password.trim()) {
+      const hashed = await bcrypt.hash(password.trim(), 10);
       updates.push(`password = $${idx++}`);
       params.push(hashed);
     }
