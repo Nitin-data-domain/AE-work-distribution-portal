@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import toast from 'react-hot-toast';
 import api from '../api/api';
 import { useAuth } from '../context/AuthContext';
-import { FiMail, FiLock, FiEye, FiEyeOff, FiInfo } from 'react-icons/fi';
+import { FiMail, FiLock, FiEye, FiEyeOff, FiInfo, FiExternalLink } from 'react-icons/fi';
 import { MdSchool } from 'react-icons/md';
 
 export default function Login() {
@@ -111,9 +111,40 @@ export default function Login() {
                 Forgot password?
               </button>
             </div>
-            <div style={{ background:'var(--blue-50)', border:'1px solid var(--blue-200)', borderRadius:'var(--radius-md)', padding:'12px 16px', marginTop:24, fontSize:12, color:'var(--slate-600)' }}>
-              <FiInfo style={{ verticalAlign: 'middle', marginRight: 6, color:'var(--blue-600)' }} />
-              <strong>Note for Students:</strong> Submit grievances via Google Form. You will receive real-time status and faculty update emails at every stage of resolution.
+            <div style={{ background:'var(--blue-50)', border:'1.5px solid var(--blue-200)', borderRadius:'var(--radius-md)', padding:'14px 16px', marginTop:20, fontSize:13, color:'var(--slate-700)', lineHeight:1.5 }}>
+              <div style={{ display:'flex', alignItems:'flex-start', gap:10 }}>
+                <FiInfo style={{ minWidth:18, height:18, marginTop:2, color:'var(--blue-600)' }} />
+                <div style={{ width:'100%' }}>
+                  <div style={{ fontWeight:700, color:'var(--blue-900)', marginBottom:3 }}>Note for Students:</div>
+                  <div style={{ color:'var(--slate-600)', fontSize:12, marginBottom:10 }}>
+                    Please submit your grievances directly via the official Google Form to receive real-time status and faculty updates.
+                  </div>
+                  <a
+                    href="https://forms.gle/dALadDQPhhL3ipwk8"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    style={{
+                      display:'inline-flex',
+                      alignItems:'center',
+                      justifyContent:'center',
+                      gap:6,
+                      background:'var(--blue-600)',
+                      color:'#ffffff',
+                      padding:'8px 16px',
+                      borderRadius:6,
+                      textDecoration:'none',
+                      fontWeight:600,
+                      fontSize:13,
+                      boxShadow:'0 2px 6px rgba(37,99,235,0.25)',
+                      transition:'background 0.2s',
+                      width:'100%',
+                      textAlign:'center'
+                    }}
+                  >
+                    📝 Fill Student Grievance Form <FiExternalLink style={{ fontSize:14 }} />
+                  </a>
+                </div>
+              </div>
             </div>
           </form>
         ) : (
