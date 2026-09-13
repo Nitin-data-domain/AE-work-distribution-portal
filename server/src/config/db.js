@@ -24,17 +24,108 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
   // Use MySQL (GoDaddy Managed MySQL / standard MySQL)
   const mysql = require('mysql2/promise');
 
-  const mysqlPool = mysql.createPool({
-    host: process.env.DB_HOST || 'localhost',
-    user: process.env.DB_USER,
-    password: process.env.DB_PASSWORD,
-    database: process.env.DB_NAME,
-    port: parseInt(process.env.DB_PORT || '3306'),
-    waitForConnections: true,
-    connectionLimit: 10,
-    queueLimit: 0,
-    ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
-  });
+  const mysqlUri = (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('mysql'))
+    ? process.env.DATABASE_URL
+    : process.env.MYSQL_URL;
+
+  const mysqlConfig = mysqlUri
+    ? {
+        uri: mysqlUri,
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+      }
+    : {
+        host: process.env.DB_HOST || process.env.MYSQL_HOST || 'localhost',
+        user: process.env.DB_USER || process.env.MYSQL_USER,
+        password: process.env.DB_PASSWORD || process.env.MYSQL_PASSWORD,
+        database: process.env.DB_NAME || process.env.MYSQL_DATABASE,
+        port: parseInt(process.env.DB_PORT || process.env.MYSQL_PORT || '3306'),
+        waitForConnections: true,
+        connectionLimit: 10,
+        queueLimit: 0,
+        ssl: process.env.DB_SSL === 'true' ? { rejectUnauthorized: false } : false
+      };
+
+  const mysqlPool = mysql.createPool(mysqlConfig);
+
+  // Auto-initialize schema & seed users on GoDaddy MySQL
+  async function autoInitMySQL(pool) {
+    try {
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS users (
+          user_id INT AUTO_INCREMENT PRIMARY KEY,
+          name VARCHAR(100) NOT NULL,
+          email VARCHAR(100) NOT NULL UNIQUE,
+          phone VARCHAR(20),
+          password VARCHAR(255) NOT NULL,
+          role VARCHAR(50) NOT NULL DEFAULT 'Student',
+          department VARCHAR(100),
+          is_active TINYINT(1) NOT NULL DEFAULT 1,
+          otp VARCHAR(10),
+          otp_expires DATETIME,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS grievances (
+          grievance_id INT AUTO_INCREMENT PRIMARY KEY,
+          title VARCHAR(255) NOT NULL,
+          description TEXT NOT NULL,
+          source VARCHAR(50) NOT NULL DEFAULT 'Portal',
+          status VARCHAR(50) NOT NULL DEFAULT 'Submitted',
+          created_by INT,
+          student_name VARCHAR(100),
+          student_email VARCHAR(100),
+          student_phone VARCHAR(20),
+          admission_no VARCHAR(50),
+          program_name VARCHAR(100),
+          assigned_dean INT,
+          assigned_hod INT,
+          assigned_to INT,
+          prev_faculty INT,
+          remark_student TEXT,
+          remark_internal TEXT,
+          file_url VARCHAR(500),
+          faculty_file_url VARCHAR(500),
+          internal_file_url VARCHAR(500),
+          resolved_at DATETIME,
+          created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+          updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+        )
+      `);
+      await pool.query(`
+        CREATE TABLE IF NOT EXISTS grievance_history (
+          history_id INT AUTO_INCREMENT PRIMARY KEY,
+          grievance_id INT NOT NULL,
+          action VARCHAR(150) NOT NULL,
+          actor_id INT,
+          actor_name VARCHAR(100),
+          remark TEXT,
+          changed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+        )
+      `);
+      const [rows] = await pool.query('SELECT COUNT(*) as count FROM users');
+      if (rows && rows[0] && rows[0].count === 0) {
+        console.log('🌱 Seeding initial administrative accounts in GoDaddy MySQL...');
+        await pool.query(`
+          INSERT IGNORE INTO users (name, email, phone, password, role, department)
+          VALUES
+            ('Capt. Deepak Dhalla', 'md@aharadaedu.in', '+919800000001', '$2a$10$lxEh3jfA0RFElSxW/6QvSu7QwBjfrdfla5GOTbeSSReScwZlEjKC2', 'Dean', 'Administration'),
+            ('Mr. Deepak Dhalla Sir', 'nitingirdhar521@gmail.com', '+919800000002', '$2a$10$lxEh3jfA0RFElSxW/6QvSu7QwBjfrdfla5GOTbeSSReScwZlEjKC2', 'Dean', 'Administration'),
+            ('Ms. Somya Pal', 'somya@aharadaedu.in', '+919800000003', '$2a$10$lxEh3jfA0RFElSxW/6QvSu7QwBjfrdfla5GOTbeSSReScwZlEjKC2', 'HOD', 'Computer Science'),
+            ('Mr. Nitin Girdhar', 'nitin@aharadaedu.in', '+919800000004', '$2a$10$lxEh3jfA0RFElSxW/6QvSu7QwBjfrdfla5GOTbeSSReScwZlEjKC2', 'Faculty', 'Computer Science'),
+            ('Rahul Sharma', 'girdharnitin4@gmail.com', '+919800000005', '$2a$10$lxEh3jfA0RFElSxW/6QvSu7QwBjfrdfla5GOTbeSSReScwZlEjKC2', 'Student', 'BCA')
+        `);
+        console.log('✅ Seed users created.');
+      }
+    } catch (err) {
+      console.warn('⚠️ MySQL auto-init note:', err.message);
+    }
+  }
+
+  autoInitMySQL(mysqlPool);
 
   if (process.env.NODE_ENV !== 'production') {
     console.log('🗄️ MySQL Connection Pool initialized');
