@@ -27,7 +27,8 @@ function sendMailHandler(to, subject, htmlBody, textBody) {
     subject: cleanSubject,
     body: finalPlain,
     htmlBody: finalHtml,
-    name: 'Aharada Education'
+    name: 'Aharada Education',
+    replyTo: 'studentsgrievance@aharadaedu.in'
   });
   
   return { success: true, message: 'Email sent to ' + to };

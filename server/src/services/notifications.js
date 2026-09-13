@@ -194,8 +194,10 @@ async function sendEmail(to, subject, htmlBody, textBody) {
           socketTimeout: 20000,
         });
 
+        const fromAddress = process.env.FROM_EMAIL || smtpUser;
         const info = await transporter.sendMail({
-          from: `"${companyName}" <${smtpUser}>`,
+          from: `"${companyName}" <${fromAddress}>`,
+          replyTo: fromAddress,
           to,
           subject,
           text: plainText,
