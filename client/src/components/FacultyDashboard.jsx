@@ -1,11 +1,14 @@
 import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/api';
+import { useAuth } from '../context/AuthContext';
 import StatusBadge from './StatusBadge';
+import StaffManagement from './StaffManagement';
 import { formatFileUrl } from '../utils/fileUrl';
-import { FiX, FiPaperclip, FiClock, FiRefreshCw, FiFileText, FiCheckCircle, FiInbox } from 'react-icons/fi';
+import { FiX, FiPaperclip, FiClock, FiRefreshCw, FiFileText, FiCheckCircle, FiInbox, FiUsers } from 'react-icons/fi';
 
 export default function FacultyDashboard() {
+  const { user } = useAuth();
   const [tasks, setTasks]       = useState([]);
   const [loading, setLoading]   = useState(true);
   const [faculty, setFaculty]   = useState([]);
@@ -85,81 +88,104 @@ export default function FacultyDashboard() {
 
   return (
     <>
-      <div className="stat-grid">
-        <div className="stat-card blue">
-          <div className="stat-label">Total Assigned</div>
-          <div className="stat-value">{tasks.length}</div>
-          <FiFileText className="stat-icon" />
+      {user?.can_manage_staff ? (
+        <div className="tabs" style={{ marginBottom: 20 }}>
+          <button
+            className={`tab-btn ${tab !== 'staff' ? 'active' : ''}`}
+            onClick={() => setTab('active')}
+          >
+            <FiFileText style={{ marginRight: 4, verticalAlign: 'middle' }} /> My Assigned Tasks
+          </button>
+          <button
+            className={`tab-btn ${tab === 'staff' ? 'active' : ''}`}
+            onClick={() => setTab('staff')}
+          >
+            <FiUsers style={{ marginRight: 4, verticalAlign: 'middle' }} /> Staff & Faculty Management
+          </button>
         </div>
-        <div className="stat-card amber">
-          <div className="stat-label">Active Tasks</div>
-          <div className="stat-value">{activeTasks.length}</div>
-          <FiClock className="stat-icon" />
-        </div>
-        <div className="stat-card green">
-          <div className="stat-label">Resolved</div>
-          <div className="stat-value">{resolvedTasks.length}</div>
-          <FiCheckCircle className="stat-icon" />
-        </div>
-      </div>
+      ) : null}
 
-      <div className="card">
-        <div className="card-header">
-          <h3>My Tasks</h3>
-          <button className="btn btn-secondary btn-sm" onClick={load}><FiRefreshCw /> Refresh</button>
-        </div>
+      {tab === 'staff' ? (
+        <StaffManagement />
+      ) : (
+        <>
+          <div className="stat-grid">
+            <div className="stat-card blue">
+              <div className="stat-label">Total Assigned</div>
+              <div className="stat-value">{tasks.length}</div>
+              <FiFileText className="stat-icon" />
+            </div>
+            <div className="stat-card amber">
+              <div className="stat-label">Active Tasks</div>
+              <div className="stat-value">{activeTasks.length}</div>
+              <FiClock className="stat-icon" />
+            </div>
+            <div className="stat-card green">
+              <div className="stat-label">Resolved</div>
+              <div className="stat-value">{resolvedTasks.length}</div>
+              <FiCheckCircle className="stat-icon" />
+            </div>
+          </div>
 
-        <div style={{ padding:'0 24px' }}>
-          <div className="tabs">
-            <button className={`tab-btn ${tab==='active'?'active':''}`} onClick={() => setTab('active')}>
-              Active <span className="tab-badge">{activeTasks.length}</span>
-            </button>
-            <button className={`tab-btn ${tab==='resolved'?'active':''}`} onClick={() => setTab('resolved')}>
-              Resolved <span className="tab-badge">{resolvedTasks.length}</span>
-            </button>
-          </div>
-        </div>
+          <div className="card">
+            <div className="card-header">
+              <h3>My Tasks</h3>
+              <button className="btn btn-secondary btn-sm" onClick={load}><FiRefreshCw /> Refresh</button>
+            </div>
 
-        {loading ? <div className="spinner" /> : shown.length === 0 ? (
-          <div className="empty-state">
-            <FiInbox className="empty-icon" />
-            <p>No {tab} tasks.</p>
+            <div style={{ padding:'0 24px' }}>
+              <div className="tabs">
+                <button className={`tab-btn ${tab==='active'?'active':''}`} onClick={() => setTab('active')}>
+                  Active <span className="tab-badge">{activeTasks.length}</span>
+                </button>
+                <button className={`tab-btn ${tab==='resolved'?'active':''}`} onClick={() => setTab('resolved')}>
+                  Resolved <span className="tab-badge">{resolvedTasks.length}</span>
+                </button>
+              </div>
+            </div>
+
+            {loading ? <div className="spinner" /> : shown.length === 0 ? (
+              <div className="empty-state">
+                <FiInbox className="empty-icon" />
+                <p>No {tab} tasks.</p>
+              </div>
+            ) : (
+              <div className="table-container">
+                <table className="table">
+                  <thead>
+                    <tr><th>#</th><th>Title</th><th>Student</th><th>Source</th><th>Status</th><th>Date</th><th></th></tr>
+                  </thead>
+                  <tbody>
+                    {shown.map(t => (
+                      <tr key={t.grievance_id}>
+                        <td><strong>#{t.grievance_id}</strong></td>
+                        <td>
+                          <div style={{ fontWeight:600 }}>{t.title}</div>
+                          <div style={{ fontSize:12, color:'var(--slate-500)' }}>{t.description?.substring(0,50)}...</div>
+                        </td>
+                        <td>
+                          <div style={{ fontWeight:500 }}>{t.student_name || 'N/A'}</div>
+                          <div style={{ fontSize:12, color:'var(--slate-500)' }}>{t.program_name}</div>
+                        </td>
+                        <td><StatusBadge source={t.source} /></td>
+                        <td><StatusBadge status={t.status} /></td>
+                        <td style={{ fontSize:13, color:'var(--slate-500)' }}>
+                          {new Date(t.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' })}
+                        </td>
+                        <td>
+                          <button className="btn btn-secondary btn-sm" onClick={() => openTask(t)}>
+                            {t.source==='Internal' ? 'Update' : 'Manage'}
+                          </button>
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            )}
           </div>
-        ) : (
-          <div className="table-container">
-            <table className="table">
-              <thead>
-                <tr><th>#</th><th>Title</th><th>Student</th><th>Source</th><th>Status</th><th>Date</th><th></th></tr>
-              </thead>
-              <tbody>
-                {shown.map(t => (
-                  <tr key={t.grievance_id}>
-                    <td><strong>#{t.grievance_id}</strong></td>
-                    <td>
-                      <div style={{ fontWeight:600 }}>{t.title}</div>
-                      <div style={{ fontSize:12, color:'var(--slate-500)' }}>{t.description?.substring(0,50)}...</div>
-                    </td>
-                    <td>
-                      <div style={{ fontWeight:500 }}>{t.student_name || 'N/A'}</div>
-                      <div style={{ fontSize:12, color:'var(--slate-500)' }}>{t.program_name}</div>
-                    </td>
-                    <td><StatusBadge source={t.source} /></td>
-                    <td><StatusBadge status={t.status} /></td>
-                    <td style={{ fontSize:13, color:'var(--slate-500)' }}>
-                      {new Date(t.created_at).toLocaleDateString('en-IN', { day:'numeric', month:'short' })}
-                    </td>
-                    <td>
-                      <button className="btn btn-secondary btn-sm" onClick={() => openTask(t)}>
-                        {t.source==='Internal' ? 'Update' : 'Manage'}
-                      </button>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+        </>
+      )}
 
       {/* Task Detail & Update Modal */}
       {selected && (

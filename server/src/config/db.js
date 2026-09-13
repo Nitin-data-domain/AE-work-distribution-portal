@@ -120,6 +120,9 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
         `);
         console.log('✅ Seed users created.');
       }
+      try {
+        await pool.query('ALTER TABLE users ADD COLUMN can_manage_staff TINYINT(1) NOT NULL DEFAULT 0');
+      } catch (colErr) {}
     } catch (err) {
       console.warn('⚠️ MySQL auto-init note:', err.message);
     }
@@ -141,6 +144,11 @@ if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres'))
       const normalized = { ...row };
       if ('is_active' in normalized) {
         normalized.is_active = !!normalized.is_active;
+      }
+      if ('can_manage_staff' in normalized) {
+        normalized.can_manage_staff = !!normalized.can_manage_staff;
+      } else {
+        normalized.can_manage_staff = (normalized.role === 'Dean');
       }
       return normalized;
     });

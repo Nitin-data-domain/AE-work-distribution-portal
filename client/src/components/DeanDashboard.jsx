@@ -2,6 +2,7 @@ import { useState, useEffect, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import api from '../api/api';
 import StatusBadge from './StatusBadge';
+import StaffManagement from './StaffManagement';
 import { formatFileUrl } from '../utils/fileUrl';
 import { FiX, FiPlus, FiClock, FiUser, FiCheckCircle, FiXCircle, FiPaperclip, FiRefreshCw, FiEdit2, FiFileText, FiInbox } from 'react-icons/fi';
 
@@ -307,75 +308,7 @@ export default function DeanDashboard() {
       )}
 
       {/* ── TAB 2: STAFF & FACULTY CREDENTIALS ───────────────── */}
-      {tab === 'faculty' && (
-        <div className="card">
-          <div className="card-header">
-            <h3>Faculty & HOD Account Management</h3>
-            <button className="btn btn-primary btn-sm" onClick={openCreateUserModal}>
-              <FiPlus /> Add Staff Member
-            </button>
-          </div>
-          <div className="card-body" style={{ padding: 0 }}>
-            {loading ? <div className="spinner" /> : (
-              <div className="table-container">
-                <table className="table">
-                  <thead>
-                    <tr>
-                      <th style={{ whiteSpace: 'nowrap' }}>Staff Name</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Role</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Email / Username</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Phone</th>
-                      <th>Department</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Status</th>
-                      <th style={{ whiteSpace: 'nowrap' }}>Actions</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {allUsers.filter(u => u.role !== 'Student').map(u => (
-                      <tr key={u.user_id}>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <strong style={{ color: 'var(--slate-800)' }}>{u.name}</strong>
-                        </td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <span className={`badge ${u.role === 'Dean' ? 'badge-closed' : u.role === 'HOD' ? 'badge-internal' : 'badge-assigned'}`}>
-                            {u.role}
-                          </span>
-                        </td>
-                        <td style={{ fontFamily: 'monospace', fontSize: 13, whiteSpace: 'nowrap' }}>{u.email}</td>
-                        <td style={{ fontSize: 13, whiteSpace: 'nowrap' }}>{u.phone || '—'}</td>
-                        <td style={{ fontSize: 13 }}>{u.department || 'General'}</td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          {u.is_active ? (
-                            <span style={{ color: 'var(--green-700)', fontWeight: 600, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <FiCheckCircle /> Active
-                            </span>
-                          ) : (
-                            <span style={{ color: 'var(--red-600)', fontWeight: 600, fontSize: 13, display: 'inline-flex', alignItems: 'center', gap: 4 }}>
-                              <FiXCircle /> Inactive
-                            </span>
-                          )}
-                        </td>
-                        <td style={{ whiteSpace: 'nowrap' }}>
-                          <div style={{ display: 'flex', gap: 6, flexWrap: 'nowrap' }}>
-                            <button className="btn btn-secondary btn-sm" title="Edit Credentials" onClick={() => openEditUserModal(u)}>
-                              <FiEdit2 /> Edit
-                            </button>
-                            {u.role !== 'Dean' && (
-                              <button className={`btn btn-sm ${u.is_active ? 'btn-danger' : 'btn-success'}`} onClick={() => handleToggleActive(u)}>
-                                {u.is_active ? 'Deactivate' : 'Activate'}
-                              </button>
-                            )}
-                          </div>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            )}
-          </div>
-        </div>
-      )}
+      {tab === 'faculty' && <StaffManagement />}
 
       {/* ── MODAL: MANAGE GRIEVANCE ───────────────────────────── */}
       {selectedGrievance && (
@@ -585,55 +518,6 @@ export default function DeanDashboard() {
         </div>
       )}
 
-      {/* ── MODAL: CREATE / EDIT STAFF USER ──────────────────── */}
-      {showUserModal && (
-        <div className="modal-overlay" onClick={() => setShowUserModal(false)}>
-          <div className="modal" style={{ maxWidth: 500 }} onClick={e => e.stopPropagation()}>
-            <div className="modal-header">
-              <h3>{editingUser ? `Edit Account: ${editingUser.name}` : 'Create New Staff Account'}</h3>
-              <button className="btn-icon" onClick={() => setShowUserModal(false)}><FiX /></button>
-            </div>
-            <form onSubmit={handleSaveUser}>
-              <div className="modal-body">
-                <div className="form-group">
-                  <label className="form-label">Full Name *</label>
-                  <input className="form-control" required placeholder="e.g. Dr. Ramesh Kumar" value={userForm.name} onChange={e => setUserForm(f => ({ ...f, name: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Email Address *</label>
-                  <input className="form-control" type="email" required placeholder="name@college.edu" value={userForm.email} onChange={e => setUserForm(f => ({ ...f, email: e.target.value }))} />
-                </div>
-                <div className="form-row">
-                  <div className="form-group">
-                    <label className="form-label">Phone</label>
-                    <input className="form-control" placeholder="+91..." value={userForm.phone} onChange={e => setUserForm(f => ({ ...f, phone: e.target.value }))} />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Role *</label>
-                    <select className="form-control" value={userForm.role} onChange={e => setUserForm(f => ({ ...f, role: e.target.value }))}>
-                      <option value="Faculty">Faculty</option>
-                      <option value="HOD">HOD</option>
-                      <option value="Dean">Dean</option>
-                    </select>
-                  </div>
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Department / Program</label>
-                  <input className="form-control" placeholder="e.g. Computer Science & Eng." value={userForm.department} onChange={e => setUserForm(f => ({ ...f, department: e.target.value }))} />
-                </div>
-                <div className="form-group">
-                  <label className="form-label">Password {editingUser ? '(leave blank to keep unchanged)' : '*'}</label>
-                  <input className="form-control" type="password" required={!editingUser} minLength={6} placeholder="Account password" value={userForm.password} onChange={e => setUserForm(f => ({ ...f, password: e.target.value }))} />
-                </div>
-              </div>
-              <div className="modal-footer">
-                <button type="button" className="btn btn-secondary" onClick={() => setShowUserModal(false)}>Cancel</button>
-                <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Account'}</button>
-              </div>
-            </form>
-          </div>
-        </div>
-      )}
     </>
   );
 }

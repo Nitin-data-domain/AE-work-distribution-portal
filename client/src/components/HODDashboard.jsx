@@ -4,7 +4,8 @@ import api from '../api/api';
 import { useAuth } from '../context/AuthContext';
 import StatusBadge from './StatusBadge';
 import { formatFileUrl } from '../utils/fileUrl';
-import { FiX, FiDownload, FiPlus, FiClock, FiRefreshCw, FiPaperclip, FiFileText, FiCheckCircle, FiInbox } from 'react-icons/fi';
+import StaffManagement from './StaffManagement';
+import { FiX, FiDownload, FiPlus, FiClock, FiRefreshCw, FiPaperclip, FiFileText, FiCheckCircle, FiInbox, FiUsers } from 'react-icons/fi';
 import { MdBarChart } from 'react-icons/md';
 
 export default function HODDashboard() {
@@ -198,6 +199,11 @@ export default function HODDashboard() {
         <button className={`tab-btn ${tab==='reports'?'active':''}`} onClick={() => setTab('reports')}>
           <MdBarChart style={{ verticalAlign:'middle', marginRight:4 }} /> Reports
         </button>
+        {user?.can_manage_staff ? (
+          <button className={`tab-btn ${tab==='staff'?'active':''}`} onClick={() => setTab('staff')}>
+            <FiUsers style={{ verticalAlign:'middle', marginRight:4 }} /> Staff Management
+          </button>
+        ) : null}
       </div>
 
       {tab === 'grievances' && (
@@ -336,6 +342,8 @@ export default function HODDashboard() {
           </div>
         </div>
       )}
+
+      {tab === 'staff' && <StaffManagement />}
 
       {/* Grievance Detail / Manage Modal */}
       {selected && (

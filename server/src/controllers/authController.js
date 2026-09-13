@@ -106,7 +106,7 @@ async function login(req, res) {
     if (!email || !password) return res.status(400).json({ error: 'Email and password are required.' });
 
     const result = await pool.query(
-      'SELECT user_id, name, email, phone, password, role, department, is_active FROM users WHERE LOWER(email) = LOWER($1)',
+      'SELECT user_id, name, email, phone, password, role, department, is_active, can_manage_staff FROM users WHERE LOWER(email) = LOWER($1)',
       [email]
     );
     if (result.rows.length === 0) return res.status(401).json({ error: 'Invalid email or password.' });
@@ -118,7 +118,7 @@ async function login(req, res) {
     if (!valid) return res.status(401).json({ error: 'Invalid email or password.' });
 
     const token = jwt.sign(
-      { user_id: user.user_id, email: user.email, role: user.role, name: user.name },
+      { user_id: user.user_id, email: user.email, role: user.role, name: user.name, can_manage_staff: !!user.can_manage_staff },
       process.env.JWT_SECRET,
       { expiresIn: '24h' }
     );
@@ -134,7 +134,7 @@ async function login(req, res) {
 async function getMe(req, res) {
   try {
     const result = await pool.query(
-      'SELECT user_id, name, email, phone, role, department, is_active FROM users WHERE user_id = $1',
+      'SELECT user_id, name, email, phone, role, department, is_active, can_manage_staff FROM users WHERE user_id = $1',
       [req.user.user_id]
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });

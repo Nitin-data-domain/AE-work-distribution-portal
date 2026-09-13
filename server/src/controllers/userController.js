@@ -34,14 +34,24 @@ async function getHODs(req, res) {
   }
 }
 
-// ─── GET /api/users — All users (Dean/HOD only)
+// ─── GET /api/users — All users (Dean/Staff Managers)
 async function getAllUsers(req, res) {
   try {
     const { role } = req.query;
-    let query = `SELECT user_id, name, email, phone, role, department, is_active, created_at FROM users`;
+    let query = `
+      SELECT u.user_id, u.name, u.email, u.phone, u.role, u.department, u.is_active, 
+             COALESCE(u.can_manage_staff, 0) AS can_manage_staff, u.created_at,
+             (SELECT COUNT(*) FROM grievances g 
+              WHERE (g.assigned_to = u.user_id OR g.assigned_hod = u.user_id OR g.assigned_dean = u.user_id)
+                AND g.status NOT IN ('Resolved', 'Closed')) AS pending_tasks_count
+      FROM users u
+    `;
     const params = [];
-    if (role) { query += ` WHERE role = $1`; params.push(role); }
-    query += ` ORDER BY role ASC, name ASC`;
+    if (role) {
+      query += ` WHERE u.role = $1`;
+      params.push(role);
+    }
+    query += ` ORDER BY u.role ASC, u.name ASC`;
     const result = await pool.query(query, params);
     res.json({ users: result.rows });
   } catch (err) {
@@ -50,10 +60,10 @@ async function getAllUsers(req, res) {
   }
 }
 
-// ─── POST /api/users — Dean creates a new Faculty/HOD account
+// ─── POST /api/users — Create new Faculty/HOD account with optional staff management power
 async function createUser(req, res) {
   try {
-    const { name, email, phone, password, role, department } = req.body;
+    const { name, email, phone, password, role, department, can_manage_staff } = req.body;
     if (!name || !email || !password || !role) {
       return res.status(400).json({ error: 'Name, email, password, and role are required.' });
     }
@@ -62,15 +72,17 @@ async function createUser(req, res) {
       return res.status(400).json({ error: 'Role must be Faculty, HOD, or Dean.' });
     }
 
-    const existing = await pool.query('SELECT user_id FROM users WHERE email = $1', [email.trim()]);
+    const existing = await pool.query('SELECT user_id FROM users WHERE LOWER(email) = LOWER($1)', [email.trim()]);
     if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already in use.' });
 
     const hashed = await bcrypt.hash(password, 10);
+    const managePower = (role === 'Dean' || can_manage_staff) ? 1 : 0;
+
     const result = await pool.query(
-      `INSERT INTO users (name, email, phone, password, role, department)
-       VALUES ($1, $2, $3, $4, $5, $6)
-       RETURNING user_id, name, email, phone, role, department, is_active`,
-      [name.trim(), email.trim(), phone ? phone.trim() : null, hashed, role, department ? department.trim() : null]
+      `INSERT INTO users (name, email, phone, password, role, department, can_manage_staff)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
+       RETURNING user_id, name, email, phone, role, department, is_active, can_manage_staff`,
+      [name.trim(), email.trim(), phone ? phone.trim() : null, hashed, role, department ? department.trim() : null, managePower]
     );
     res.status(201).json({ message: `${role} account created.`, user: result.rows[0] });
   } catch (err) {
@@ -79,11 +91,11 @@ async function createUser(req, res) {
   }
 }
 
-// ─── PUT /api/users/:id — Dean updates user credentials
+// ─── PUT /api/users/:id — Update user credentials and permissions
 async function updateUser(req, res) {
   try {
     const { id } = req.params;
-    const { name, email, phone, password, department, role } = req.body;
+    const { name, email, phone, password, department, role, can_manage_staff } = req.body;
 
     const updates = [];
     const params = [];
@@ -94,7 +106,7 @@ async function updateUser(req, res) {
       params.push(name.trim());
     }
     if (email) {
-      const existing = await pool.query('SELECT user_id FROM users WHERE email = $1 AND user_id != $2', [email.trim(), id]);
+      const existing = await pool.query('SELECT user_id FROM users WHERE LOWER(email) = LOWER($1) AND user_id != $2', [email.trim(), id]);
       if (existing.rows.length > 0) return res.status(409).json({ error: 'Email already in use.' });
       updates.push(`email = $${idx++}`);
       params.push(email.trim());
@@ -115,6 +127,10 @@ async function updateUser(req, res) {
       updates.push(`role = $${idx++}`);
       params.push(role);
     }
+    if (can_manage_staff !== undefined) {
+      updates.push(`can_manage_staff = $${idx++}`);
+      params.push(can_manage_staff ? 1 : 0);
+    }
     if (password && password.trim()) {
       const hashed = await bcrypt.hash(password.trim(), 10);
       updates.push(`password = $${idx++}`);
@@ -126,7 +142,7 @@ async function updateUser(req, res) {
     params.push(id);
     const result = await pool.query(
       `UPDATE users SET ${updates.join(', ')} WHERE user_id = $${idx}
-       RETURNING user_id, name, email, phone, role, department, is_active`,
+       RETURNING user_id, name, email, phone, role, department, is_active, can_manage_staff`,
       params
     );
     if (result.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
@@ -134,6 +150,128 @@ async function updateUser(req, res) {
   } catch (err) {
     console.error('Update user error:', err);
     res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// ─── DELETE /api/users/:id — Delete user (blocks if pending tasks exist)
+async function deleteUser(req, res) {
+  try {
+    const { id } = req.params;
+
+    if (parseInt(id) === parseInt(req.user.user_id)) {
+      return res.status(400).json({ error: 'You cannot delete your own account.' });
+    }
+
+    const userRes = await pool.query('SELECT user_id, name, role FROM users WHERE user_id = $1', [id]);
+    if (userRes.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    const targetUser = userRes.rows[0];
+
+    // Check if this staff member has any active/pending grievances assigned
+    const pending = await pool.query(
+      `SELECT grievance_id, title, status FROM grievances
+       WHERE (assigned_to = $1 OR assigned_hod = $1 OR assigned_dean = $1)
+         AND status NOT IN ('Resolved', 'Closed')`,
+      [id]
+    );
+
+    if (pending.rows.length > 0) {
+      return res.status(400).json({
+        error: `Cannot delete ${targetUser.name}: They have ${pending.rows.length} pending task(s) assigned. Please reassign these tasks to another staff member first.`,
+        pendingCount: pending.rows.length,
+        pendingTasks: pending.rows,
+        userId: targetUser.user_id,
+        userName: targetUser.name,
+      });
+    }
+
+    // Safely clear references before deleting
+    await pool.query('UPDATE grievances SET created_by = NULL WHERE created_by = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_to = NULL WHERE assigned_to = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_hod = NULL WHERE assigned_hod = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_dean = NULL WHERE assigned_dean = $1', [id]);
+    await pool.query('UPDATE grievances SET prev_faculty = NULL WHERE prev_faculty = $1', [id]);
+    await pool.query('UPDATE grievance_history SET actor_id = NULL WHERE actor_id = $1', [id]);
+
+    await pool.query('DELETE FROM users WHERE user_id = $1', [id]);
+
+    res.json({ success: true, message: `Account for ${targetUser.name} has been deleted.` });
+  } catch (err) {
+    console.error('Delete user error:', err);
+    res.status(500).json({ error: 'Internal server error while deleting user.' });
+  }
+}
+
+// ─── POST /api/users/:id/reassign-and-delete — Reassign all pending tasks to another staff member, then delete
+async function reassignAndDeleteUser(req, res) {
+  try {
+    const { id } = req.params;
+    const { reassignToUserId } = req.body;
+
+    if (!reassignToUserId) {
+      return res.status(400).json({ error: 'Replacement staff member (reassignToUserId) is required.' });
+    }
+    if (parseInt(id) === parseInt(req.user.user_id)) {
+      return res.status(400).json({ error: 'You cannot delete your own account.' });
+    }
+    if (parseInt(id) === parseInt(reassignToUserId)) {
+      return res.status(400).json({ error: 'Cannot reassign tasks to the user being deleted.' });
+    }
+
+    const targetNew = await pool.query(
+      'SELECT user_id, name, role FROM users WHERE user_id = $1 AND (is_active = 1 OR is_active = true)',
+      [reassignToUserId]
+    );
+    if (targetNew.rows.length === 0) {
+      return res.status(400).json({ error: 'Selected replacement staff member not found or inactive.' });
+    }
+    const newStaff = targetNew.rows[0];
+
+    const oldRes = await pool.query('SELECT user_id, name, role FROM users WHERE user_id = $1', [id]);
+    if (oldRes.rows.length === 0) return res.status(404).json({ error: 'User not found.' });
+    const oldStaff = oldRes.rows[0];
+
+    // Find and reassign pending grievances
+    const pending = await pool.query(
+      `SELECT grievance_id, title FROM grievances
+       WHERE (assigned_to = $1 OR assigned_hod = $1 OR assigned_dean = $1)
+         AND status NOT IN ('Resolved', 'Closed')`,
+      [id]
+    );
+
+    for (const g of pending.rows) {
+      await pool.query(
+        `UPDATE grievances SET 
+           assigned_to = CASE WHEN assigned_to = $1 THEN $2 ELSE assigned_to END,
+           assigned_hod = CASE WHEN assigned_hod = $1 THEN $2 ELSE assigned_hod END,
+           assigned_dean = CASE WHEN assigned_dean = $1 THEN $2 ELSE assigned_dean END
+         WHERE grievance_id = $3`,
+        [id, reassignToUserId, g.grievance_id]
+      );
+
+      await pool.query(
+        `INSERT INTO grievance_history (grievance_id, action, actor_id, actor_name, remark)
+         VALUES ($1, 'Reassigned on Account Deletion', $2, $3, $4)`,
+        [g.grievance_id, req.user.user_id, req.user.name, `Reassigned from ${oldStaff.name} to ${newStaff.name} due to account deletion.`]
+      );
+    }
+
+    // Safely clear remaining references
+    await pool.query('UPDATE grievances SET created_by = NULL WHERE created_by = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_to = NULL WHERE assigned_to = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_hod = NULL WHERE assigned_hod = $1', [id]);
+    await pool.query('UPDATE grievances SET assigned_dean = NULL WHERE assigned_dean = $1', [id]);
+    await pool.query('UPDATE grievances SET prev_faculty = NULL WHERE prev_faculty = $1', [id]);
+    await pool.query('UPDATE grievance_history SET actor_id = NULL WHERE actor_id = $1', [id]);
+
+    await pool.query('DELETE FROM users WHERE user_id = $1', [id]);
+
+    res.json({
+      success: true,
+      message: `${pending.rows.length} pending task(s) transferred to ${newStaff.name}, and ${oldStaff.name}'s account was deleted.`
+    });
+  } catch (err) {
+    console.error('Reassign and delete user error:', err);
+    res.status(500).json({ error: 'Internal server error during reassign and delete.' });
   }
 }
 
@@ -175,4 +313,14 @@ async function updateProfile(req, res) {
   }
 }
 
-module.exports = { getFaculty, getHODs, getAllUsers, createUser, updateUser, toggleActive, updateProfile };
+module.exports = {
+  getFaculty,
+  getHODs,
+  getAllUsers,
+  createUser,
+  updateUser,
+  deleteUser,
+  reassignAndDeleteUser,
+  toggleActive,
+  updateProfile
+};
