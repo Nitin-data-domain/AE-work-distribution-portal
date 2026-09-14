@@ -2,16 +2,52 @@
 // College Grievance Portal — Dual Database Connection Pool (MySQL & Postgres)
 // Handles query conversion and RETURNING clauses for MySQL compatibility
 // ============================================================
+const path = require('path');
+const dns = require('dns');
+
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
 require('dotenv').config();
 
-if (process.env.DATABASE_URL && process.env.DATABASE_URL.startsWith('postgres')) {
+// Fallback DNS resolver for neon.tech in case local router / ISP DNS has issues
+try {
+  const origLookup = dns.lookup;
+  const { Resolver } = dns;
+  const fallbackResolver = new Resolver();
+  fallbackResolver.setServers(['8.8.8.8', '1.1.1.1']);
+
+  dns.lookup = (hostname, options, callback) => {
+    if (typeof options === 'function') {
+      callback = options;
+      options = {};
+    }
+    origLookup(hostname, options, (err, address, family) => {
+      if (err && hostname && hostname.includes('neon.tech')) {
+        fallbackResolver.resolve4(hostname, (resErr, addresses) => {
+          if (resErr || !addresses || addresses.length === 0) return callback(err);
+          if (options && options.all) {
+            return callback(null, addresses.map(a => ({ address: a, family: 4 })));
+          }
+          return callback(null, addresses[0], 4);
+        });
+      } else {
+        callback(err, address, family);
+      }
+    });
+  };
+} catch (e) {}
+
+const DEFAULT_DATABASE_URL = 'postgresql://neondb_owner:npg_oFGbWMI2P9sr@ep-quiet-cherry-ahbx45cl.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require';
+const activeDbUrl = process.env.DATABASE_URL || DEFAULT_DATABASE_URL;
+
+if (activeDbUrl && activeDbUrl.startsWith('postgres')) {
   process.env.NODE_TLS_REJECT_UNAUTHORIZED = '0';
   const { Pool: NeonPool, neonConfig } = require('@neondatabase/serverless');
   const ws = require('ws');
   neonConfig.webSocketConstructor = ws;
 
   const pgPool = new NeonPool({
-    connectionString: process.env.DATABASE_URL,
+    connectionString: activeDbUrl,
     connectionTimeoutMillis: 10000,
   });
 

@@ -5,7 +5,14 @@
 const nodemailer = require('nodemailer');
 const https = require('https');
 const http = require('http');
+const path = require('path');
 const { sendSMS } = require('./sms');
+
+require('dotenv').config({ path: path.join(__dirname, '..', '.env') });
+require('dotenv').config({ path: path.join(__dirname, '..', '..', '.env') });
+require('dotenv').config();
+
+const DEFAULT_GOOGLE_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbw9rNpVQydJi5jhw4Ype_Y2TQye0oRATu0SPF-Fn_v85P8wyW7Bk1XKsGpg7ZLvoDWK/exec';
 
 // ─── HTTP Request with manual redirect following ─────────────
 // Google Apps Script Web Apps redirect (302) to googleusercontent.com.
@@ -97,9 +104,10 @@ async function sendEmail(to, subject, htmlBody, textBody) {
 
   // 1. Google Apps Script Proxy (REQUIRED for GoDaddy — all SMTP ports blocked)
   //    Sends full HTML email via POST (or GET with Base64 encoding).
-  if (process.env.GOOGLE_SCRIPT_URL) {
+  const googleScriptUrl = process.env.GOOGLE_SCRIPT_URL || DEFAULT_GOOGLE_SCRIPT_URL;
+  if (googleScriptUrl) {
     try {
-      const scriptUrlStr = process.env.GOOGLE_SCRIPT_URL.trim();
+      const scriptUrlStr = googleScriptUrl.trim();
 
       // Encode UTF-8 Base64 for subject, html, text to prevent URL garbling & length issues
       const b64subject = Buffer.from(cleanSubject, 'utf-8').toString('base64');

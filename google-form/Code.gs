@@ -4,8 +4,48 @@
  * ============================================================
  */
 
-const API_ENDPOINT = "https://areaf986x0.c36.airoapp.ai/api/webhooks/google-form";
+const PRIMARY_ENDPOINT = "https://q1hw2q53fo.c36.airoapp.ai/api/webhooks/google-form";
+const FALLBACK_ENDPOINT = "https://areaf986x0.c36.airoapp.ai/api/webhooks/google-form";
 const WEBHOOK_SECRET = "COLLEGE_GRIEVANCE_SECRET_2026";
+
+function sendToWebhook(data) {
+  const options = {
+    method: "post",
+    contentType: "application/json",
+    headers: { "Bypass-Tunnel-Reminder": "true" },
+    payload: JSON.stringify(data),
+    muteHttpExceptions: true
+  };
+
+  // 1. Try Primary Endpoint (Live Deployment)
+  try {
+    const res = UrlFetchApp.fetch(PRIMARY_ENDPOINT, options);
+    const code = res.getResponseCode();
+    const body = res.getContentText();
+    Logger.log("Primary Endpoint (" + PRIMARY_ENDPOINT + ") Response: " + code + " | " + body);
+    if (code === 200 || code === 201) {
+      // Check if body is JSON or "Coming Soon" page
+      if (!body.includes("Coming Soon!") && !body.includes("<!DOCTYPE html>")) {
+        return { success: true, endpoint: PRIMARY_ENDPOINT, code: code, body: body };
+      }
+    }
+  } catch (err) {
+    Logger.log("Primary Endpoint Error: " + err.toString());
+  }
+
+  // 2. Fallback Endpoint
+  try {
+    Logger.log("Trying Fallback Endpoint: " + FALLBACK_ENDPOINT);
+    const fallbackRes = UrlFetchApp.fetch(FALLBACK_ENDPOINT, options);
+    const fallbackCode = fallbackRes.getResponseCode();
+    const fallbackBody = fallbackRes.getContentText();
+    Logger.log("Fallback Endpoint Response: " + fallbackCode + " | " + fallbackBody);
+    return { success: fallbackCode === 200 || fallbackCode === 201, endpoint: FALLBACK_ENDPOINT, code: fallbackCode, body: fallbackBody };
+  } catch (fallbackErr) {
+    Logger.log("Fallback Endpoint Error: " + fallbackErr.toString());
+    return { success: false, error: fallbackErr.toString() };
+  }
+}
 
 function onFormSubmit(e) {
   try {
@@ -76,16 +116,8 @@ function onFormSubmit(e) {
     if (!data.title) data.title = (data.problem_desc || "Grievance Submission").substring(0, 50);
     if (!data.problem_desc) data.problem_desc = data.title;
 
-    const options = {
-      method: "post",
-      contentType: "application/json",
-      headers: { "Bypass-Tunnel-Reminder": "true" },
-      payload: JSON.stringify(data),
-      muteHttpExceptions: true
-    };
-
-    const res = UrlFetchApp.fetch(API_ENDPOINT, options);
-    Logger.log("Status: " + res.getResponseCode() + " Body: " + res.getContentText());
+    const result = sendToWebhook(data);
+    Logger.log("Form Submission Webhook Result: " + JSON.stringify(result));
   } catch (err) {
     Logger.log("Error: " + err.toString());
   }
@@ -106,15 +138,6 @@ function testWebhook() {
     problem_desc: "Testing direct webhook execution from Google Apps Script."
   };
 
-  const options = {
-    method: "post",
-    contentType: "application/json",
-    headers: { "Bypass-Tunnel-Reminder": "true" },
-    payload: JSON.stringify(data),
-    muteHttpExceptions: true
-  };
-
-  const res = UrlFetchApp.fetch(API_ENDPOINT, options);
-  Logger.log("Test Webhook Code: " + res.getResponseCode());
-  Logger.log("Test Webhook Body: " + res.getContentText());
+  const result = sendToWebhook(data);
+  Logger.log("Test Webhook Result: " + JSON.stringify(result));
 }

@@ -7,6 +7,8 @@ const jwt = require('jsonwebtoken');
 const pool = require('../config/db');
 const { sendEmail, buildHtml } = require('../services/notifications');
 
+const JWT_SECRET = process.env.JWT_SECRET || 'college_grievance_portal_secret_2026';
+
 function generateOTP() {
   return Math.floor(100000 + Math.random() * 900000).toString();
 }
@@ -89,7 +91,7 @@ async function register(req, res) {
 
     const token = jwt.sign(
       { user_id: user.user_id, email: user.email, role: user.role, name: user.name },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
     res.status(201).json({ message: 'Registration successful.', token, user });
@@ -119,7 +121,7 @@ async function login(req, res) {
 
     const token = jwt.sign(
       { user_id: user.user_id, email: user.email, role: user.role, name: user.name, can_manage_staff: !!user.can_manage_staff },
-      process.env.JWT_SECRET,
+      JWT_SECRET,
       { expiresIn: '24h' }
     );
     delete user.password;

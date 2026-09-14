@@ -218,7 +218,7 @@ async function reassignAndDeleteUser(req, res) {
     }
 
     const targetNew = await pool.query(
-      'SELECT user_id, name, role FROM users WHERE user_id = $1 AND (is_active = 1 OR is_active = true)',
+      'SELECT user_id, name, role FROM users WHERE user_id = $1 AND is_active = true',
       [reassignToUserId]
     );
     if (targetNew.rows.length === 0) {
