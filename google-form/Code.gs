@@ -49,6 +49,11 @@ function sendToWebhook(data) {
 
 function onFormSubmit(e) {
   try {
+    if (!e || !e.response) {
+      Logger.log("ℹ️ Manual run detected from Apps Script editor (no form event). Running testWebhook() instead...");
+      testWebhook();
+      return;
+    }
     const itemResponses = e.response.getItemResponses();
     let data = {
       secret_key: WEBHOOK_SECRET,
