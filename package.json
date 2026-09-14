@@ -4,6 +4,7 @@
   "description": "Aharada Education — Work Distribution & Grievance Portal",
   "main": "server/src/index.js",
   "scripts": {
+    "dev": "node server/src/index.js",
     "build": "npm --prefix client install && npm --prefix client run build && npm --prefix server install",
     "postinstall": "npm run build",
     "start": "node server/src/index.js"
